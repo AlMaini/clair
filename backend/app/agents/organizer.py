@@ -120,7 +120,12 @@ async def organize_note(note_id: str) -> None:
     # ── 6. Upsert category ───────────────────────────────────────────────────
     category_id = await _upsert_category(user_id, result, categories)
 
-    # ── 7. Write back to the note ────────────────────────────────────────────
+    # ── 7. Validate related_note_ids against known existing IDs ──────────────
+    existing_ids = {n["id"] for n in existing_notes}
+    raw_related = result.get("related_note_ids") or []
+    related_note_ids = [r for r in raw_related if r in existing_ids][:3]
+
+    # ── 8. Write back to the note ────────────────────────────────────────────
     await asyncio.to_thread(
         lambda: supabase.table("notes")
         .update(
@@ -128,6 +133,7 @@ async def organize_note(note_id: str) -> None:
                 "processed_content": result.get("summary"),
                 "tags": result.get("tags") or [],
                 "category_id": category_id,
+                "related_note_ids": related_note_ids,
             }
         )
         .eq("id", note_id)
@@ -135,10 +141,11 @@ async def organize_note(note_id: str) -> None:
     )
 
     log.info(
-        "organize_note: note=%s category=%s tags=%s",
+        "organize_note: note=%s category=%s tags=%s related=%s",
         note_id,
         result.get("category_name"),
         result.get("tags"),
+        related_note_ids,
     )
 
 
