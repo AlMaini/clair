@@ -1,27 +1,29 @@
 import asyncio
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.dependencies import get_user_id
-from app.models.schemas import NoteCreate, NoteResponse
+from app.models.schemas import NoteResponse
+from app.services.storage import get_signed_url, upload_file
 from app.services.supabase import supabase
 
 router = APIRouter()
 
-# Columns to fetch on every note query — includes related category and resources
+# Columns fetched on every note query — includes joined category and resources
 NOTE_SELECT = (
     "*, "
     "categories(id, name, description, note_count), "
     "resources(id, title, url, resource_type, created_at)"
 )
 
+ContentType = Literal["text", "voice", "image", "link"]
+
 
 def _row_to_note(row: dict) -> NoteResponse:
-    """Map a raw Supabase row (with joined tables) to a NoteResponse."""
+    """Map a raw Supabase row (with joined tables) to NoteResponse."""
     category = row.get("categories")
-    # For a FK join, Supabase returns a dict or None.
-    # Guard against the empty-list edge case in some client versions.
     if isinstance(category, list):
         category = category[0] if category else None
 
@@ -33,6 +35,7 @@ def _row_to_note(row: dict) -> NoteResponse:
         category=category,
         tags=row.get("tags") or [],
         resources=row.get("resources") or [],
+        file_path=row.get("file_path"),
         created_at=row["created_at"],
     )
 
@@ -43,26 +46,36 @@ class NoteCreated(BaseModel):
 
 @router.post("/", response_model=NoteCreated, status_code=201)
 async def create_note(
-    note: NoteCreate,
+    content_type: Annotated[ContentType, Form()],
+    content: Annotated[str, Form()] = "",
+    source_url: Annotated[str | None, Form()] = None,
     file: UploadFile | None = File(default=None),
     user_id: str = Depends(get_user_id),
 ):
-    """Persist raw note content to Supabase and queue the AI processing pipeline."""
+    """Persist a note to Supabase and queue the AI processing pipeline.
+
+    Accepts multipart/form-data so that voice and image notes can include a
+    file upload alongside the note metadata. Text and link notes send content
+    as a plain form field with no file attached.
+
+    Voice/image notes: submit content="" and attach the file — the Celery
+    worker will populate raw_content after transcription/OCR.
+    """
     payload: dict = {
         "user_id": user_id,
-        "raw_content": note.content,
-        "content_type": note.content_type,
-        "source_url": note.source_url,
+        "raw_content": content,
+        "content_type": content_type,
+        "source_url": source_url,
         "tags": [],
     }
 
-    if file:
-        # TODO: upload to Supabase Storage bucket "note-files", then:
-        #   file_bytes = await file.read()
-        #   path = f"{user_id}/{uuid4()}-{file.filename}"
-        #   supabase.storage.from_("note-files").upload(path, file_bytes)
-        #   payload["file_path"] = path
-        pass
+    if file and file.filename:
+        file_bytes = await file.read()
+        mime = file.content_type or "application/octet-stream"
+        file_path = await asyncio.to_thread(
+            upload_file, user_id, file.filename, file_bytes, mime
+        )
+        payload["file_path"] = file_path
 
     try:
         result = await asyncio.to_thread(
@@ -73,9 +86,9 @@ async def create_note(
 
     note_id: str = result.data[0]["id"]
 
-    # Enqueue the Celery task — fail silently if Redis isn't up yet
+    # Enqueue AI processing — silently skip if Redis isn't up yet
     try:
-        from app.worker import process_note  # avoid circular import at module load
+        from app.worker import process_note
 
         process_note.delay(note_id)
     except Exception:
@@ -129,3 +142,38 @@ async def get_note(
         raise HTTPException(status_code=400, detail=detail)
 
     return _row_to_note(result.data)
+
+
+@router.get("/{note_id}/file-url")
+async def get_file_url(
+    note_id: str,
+    user_id: str = Depends(get_user_id),
+    expires_in: int = 3600,
+):
+    """Return a short-lived signed URL for the file attached to a note.
+
+    The URL is valid for `expires_in` seconds (default 1 hour). The frontend
+    should call this on demand (e.g. when the user opens a voice/image note)
+    rather than storing the URL, since it expires.
+    """
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase.table("notes")
+            .select("file_path")
+            .eq("id", note_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+    except Exception as e:
+        detail = str(e)
+        if "PGRST116" in detail or "0 rows" in detail:
+            raise HTTPException(status_code=404, detail="Note not found")
+        raise HTTPException(status_code=400, detail=detail)
+
+    file_path: str | None = result.data.get("file_path")
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Note has no attached file")
+
+    url = await asyncio.to_thread(get_signed_url, file_path, expires_in)
+    return {"url": url, "expires_in": expires_in}

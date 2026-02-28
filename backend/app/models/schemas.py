@@ -18,6 +18,7 @@ class NoteResponse(BaseModel):
     category: dict | None
     tags: list[str]
     resources: list[dict]
+    file_path: str | None
     created_at: datetime
 
 
