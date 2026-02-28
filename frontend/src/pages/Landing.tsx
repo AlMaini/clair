@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
-// import { Card, CardHeader } from "@heroui/react";
 import "../styles/global.css";
 
 // Types and Accent Palettes
@@ -46,6 +44,205 @@ const ACCENTS = {
     dot: "#b8a0dc",
     glow: "rgba(184,160,220,0.2)",
   },
+};
+
+// Mock data
+const MOCK_NOTES = [
+  {
+    id: 1,
+    title: "The Nature of Consciousness",
+    date: "Feb 27",
+    tags: ["philosophy", "mind"],
+    accent: "rose" as AccentKey,
+    tilt: -1.5,
+    tailSide: "left",
+    summary:
+      "Explored whether consciousness emerges from physical processes or exists independently. Touched on qualia, the hard problem, and integrated information theory.",
+    research: [
+      "Integrated Information Theory (IIT) — Giulio Tononi",
+      "Global Workspace Theory — Bernard Baars",
+      "Panpsychism and its modern defenders",
+    ],
+  },
+  {
+    id: 2,
+    title: "Decentralized Energy Grids",
+    date: "Feb 25",
+    tags: ["energy", "climate"],
+    accent: "periwinkle" as AccentKey,
+    tilt: 1.2,
+    tailSide: "right",
+    summary:
+      "Ideas on peer-to-peer energy trading using blockchain. Neighborhood microgrids could stabilize supply and reduce transmission loss.",
+    research: [
+      "Brooklyn Microgrid Project (LO3 Energy)",
+      "Virtual Power Plants — aggregated DER management",
+      "Transactive energy systems overview",
+    ],
+  },
+  {
+    id: 3,
+    title: "Language Shapes Thought",
+    date: "Feb 22",
+    tags: ["linguistics", "cognition"],
+    accent: "sage" as AccentKey,
+    tilt: -0.8,
+    tailSide: "left",
+    summary:
+      "Sapir-Whorf hypothesis revisited. Does the vocabulary available to us constrain or expand the concepts we can form? Color perception across languages as a test case.",
+    research: [
+      "Linguistic relativity — Boroditsky et al.",
+      "Color categorization across cultures (Berlin & Kay)",
+      "Universal Grammar vs. usage-based linguistics",
+    ],
+  },
+  {
+    id: 4,
+    title: "Fermented Foods & Gut Health",
+    date: "Feb 19",
+    tags: ["nutrition", "health"],
+    accent: "honey" as AccentKey,
+    tilt: 1.8,
+    tailSide: "right",
+    summary:
+      "Kimchi, kefir, and tempeh introduce live cultures. Gut microbiome diversity correlates with mental health — the gut-brain axis is real and fascinating.",
+    research: [
+      "Gut-brain axis and the vagus nerve",
+      "Stanford fermented foods study (Sonnenburg Lab)",
+      "Psychobiotics — probiotics that influence mood",
+    ],
+  },
+];
+
+type Note = typeof MOCK_NOTES[number];
+
+// Note Card component
+const NoteCard = ({ note, index }: { note: Note; index: number }) => {
+  const [hovered, setHovered] = useState(false);
+  const acc = ACCENTS[note.accent];
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: acc.bg,
+        border: `2px solid ${acc.border}`,
+        borderRadius: "18px",
+        padding: "18px 18px 16px",
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        minHeight: "160px",
+        boxShadow: hovered
+          ? `0 10px 32px ${acc.glow}, 0 2px 12px rgba(160,140,120,0.1)`
+          : `0 2px 12px ${acc.glow}, 0 1px 4px rgba(160,140,120,0.05)`,
+        transform: hovered ? "translateY(-3px)" : "translateY(0)",
+        transition: "transform 0.22s ease, box-shadow 0.22s ease",
+        animation: `floatIn 0.45s cubic-bezier(.22,.68,0,1.1) both`,
+        animationDelay: `${index * 0.07}s`,
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Decorative corner wash */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          width: "64px",
+          height: "64px",
+          background: `radial-gradient(circle at top right, ${acc.dot}55 0%, transparent 70%)`,
+          borderRadius: "0 18px 0 0",
+          pointerEvents: "none",
+        }}
+      />
+      {/* Accent dot */}
+      <div
+        style={{
+          position: "absolute",
+          top: 14,
+          right: 14,
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: acc.dot,
+          opacity: 0.85,
+        }}
+      />
+
+      <div>
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "15px",
+            color: "#3a3028",
+            fontWeight: 600,
+            lineHeight: "1.35",
+            marginBottom: "7px",
+            paddingRight: "16px",
+          }}
+        >
+          {note.title}
+        </div>
+        <p
+          style={{
+            fontSize: "12px",
+            color: "#8a7a70",
+            lineHeight: "1.6",
+            fontFamily: "var(--font-body)",
+            display: "-webkit-box",
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {note.summary}
+        </p>
+      </div>
+
+      <div
+        style={{
+          marginTop: "12px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "5px",
+        }}
+      >
+        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+          {note.tags.map((t) => (
+            <span
+              key={t}
+              style={{
+                background: acc.tagBg,
+                color: acc.tagText,
+                borderRadius: "20px",
+                padding: "2px 9px",
+                fontSize: "10.5px",
+                fontFamily: "var(--font-body)",
+                fontWeight: 700,
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+        <span
+          style={{
+            fontSize: "10.5px",
+            color: "#c0b0a0",
+            fontFamily: "var(--font-body)",
+            flexShrink: 0,
+          }}
+        >
+          {note.date}
+        </span>
+      </div>
+    </div>
+  );
 };
 
 // Floating micro-bubbles background
@@ -148,7 +345,6 @@ const CloseIcon = () => (
 ``;
 
 export default function LandingPage() {
-  const { id } = useParams<{ id: string }>();
   const [query, setQuery] = useState("");
 
   return (
@@ -369,13 +565,104 @@ export default function LandingPage() {
         </div>
 
         {/* Folder Container */}
-        {/* <div>
-          <Card>
-            <CardHeader>
-              <p>Thoughts</p>
-            </CardHeader>
-          </Card>
-        </div> */}
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "780px",
+            background: "rgba(255,253,249,0.72)",
+            backdropFilter: "blur(16px)",
+            border: "2px solid rgba(200,185,168,0.28)",
+            borderRadius: "32px",
+            boxShadow:
+              "0 8px 48px rgba(160,140,120,0.1), inset 0 2px 12px rgba(255,255,255,0.8), inset 0 -2px 8px rgba(200,180,160,0.07)",
+            padding: "28px 24px 8px",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          {/* Subtle top label */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "20px",
+              paddingBottom: "14px",
+              borderBottom: "1.5px dashed rgba(200,185,168,0.35)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: "linear-gradient(135deg,#88b894,#6a9878)",
+                  boxShadow: "0 0 6px rgba(106,152,120,0.4)",
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "15px",
+                  color: "#8a7a6a",
+                  fontStyle: "italic",
+                  fontWeight: 400,
+                }}
+              >
+                all thoughts
+              </span>
+            </div>
+            <span
+              style={{
+                fontSize: "12px",
+                color: "#c0b0a0",
+                fontFamily: "var(--font-body)",
+              }}
+            >
+              {MOCK_NOTES.length} notes
+            </span>
+          </div>
+
+          {/* Scrollable inner area */}
+          <div
+            style={{
+              maxHeight: "560px",
+              overflowY: "auto",
+              overflowX: "visible",
+              paddingRight: "6px",
+              paddingBottom: "20px",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: "14px",
+                paddingTop: "4px",
+              }}
+            >
+              {MOCK_NOTES.map((note, i) => (
+                <NoteCard key={note.id} note={note} index={i} />
+              ))}
+            </div>
+          </div>
+
+          {/* Bottom fade-out gradient when scrollable */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: "48px",
+              background:
+                "linear-gradient(to top, rgba(255,253,249,0.95), transparent)",
+              borderRadius: "0 0 30px 30px",
+              pointerEvents: "none",
+            }}
+          />
+        </div>
       </div>
     </>
   );
