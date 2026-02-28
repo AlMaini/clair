@@ -1,7 +1,8 @@
 async def research_note(note_id: str) -> None:
     """Enrich a note with relevant external resources.
 
-    Uses Claude to analyze the note content and then searches for related:
+    Uses the Featherless OpenAI-compatible API (via `services.ai_client`) to
+    analyze the note content and search for related:
     - YouTube videos
     - Articles / blog posts
     - Social media posts (Twitter/X, Reddit)

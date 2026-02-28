@@ -3,6 +3,7 @@ async def semantic_search(query: str, user_id: str) -> list[dict]:
 
     Steps:
     1. Generate an embedding for the query text via `embeddings.generate_embedding`
+       (uses the Featherless OpenAI-compatible API)
     2. Run a pgvector cosine-similarity search against `notes.embedding` in Supabase
     3. Combine with a full-text keyword search for hybrid ranking
     4. Return results scoped to `user_id`, ordered by relevance score
