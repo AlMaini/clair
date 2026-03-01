@@ -144,19 +144,18 @@ async def _interpret_query(query: str) -> dict:
 
 
 async def _keyword_search(structured: dict, user_id: str) -> list[dict]:
-    """Keyword + tag search against raw_content and tags columns."""
-    semantic_q = structured.get("semantic_query") or " ".join(
-        structured.get("keywords", [])
-    )
-    if not semantic_q.strip():
+    """Keyword search against raw_content using individual keyword OR matching."""
+    keywords = [kw.strip() for kw in structured.get("keywords", []) if kw.strip()]
+    if not keywords:
         return []
 
     try:
+        or_filter = ", ".join(f"raw_content.ilike.%{kw}%" for kw in keywords)
         q = (
             supabase.table("notes")
             .select("id, raw_content, processed_content, content_type, category_id, tags, source_url, file_path, created_at")
             .eq("user_id", user_id)
-            .ilike("raw_content", f"%{semantic_q}%")
+            .or_(or_filter)
         )
         if structured.get("content_type_filter"):
             q = q.eq("content_type", structured["content_type_filter"])
