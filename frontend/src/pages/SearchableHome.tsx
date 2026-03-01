@@ -1,9 +1,10 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import type { NoteResponse } from "../types/api";
 import "../styles/global.css";
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-type AccentKey = keyof typeof ACCENTS;
 
 // ── Accent palettes ────────────────────────────────────────────────────────────
 const ACCENTS = {
@@ -13,6 +14,49 @@ const ACCENTS = {
   honey:      { bg: "#fef8ec", border: "rgba(210,175,100,0.35)", tagBg: "rgba(200,165,85,0.15)",  tagText: "#8a6820", dot: "#d4b060", glow: "rgba(212,176,96,0.2)",  folder: "#f4e4c0" },
   lavender:   { bg: "#f4f0fe", border: "rgba(168,140,220,0.35)", tagBg: "rgba(158,130,210,0.15)", tagText: "#6848b0", dot: "#b8a0dc", glow: "rgba(184,160,220,0.2)", folder: "#e4d8f8" },
 };
+type AccentKey = keyof typeof ACCENTS;
+const ACCENT_KEYS = Object.keys(ACCENTS) as AccentKey[];
+
+// ── Display shape ──────────────────────────────────────────────────────────────
+interface DisplayNote {
+  id: string;
+  title: string;
+  summary: string;
+  date: string;
+  accent: AccentKey;
+  tailSide: "left" | "right";
+  tags: string[];
+  research: { title: string; url: string }[];
+}
+
+function accentFromCategory(name: string | undefined, index: number): AccentKey {
+  if (name) {
+    let hash = 0;
+    for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+    return ACCENT_KEYS[hash % ACCENT_KEYS.length];
+  }
+  return ACCENT_KEYS[index % ACCENT_KEYS.length];
+}
+
+function toDisplay(note: NoteResponse, index: number): DisplayNote {
+  const content = note.processed_content || note.raw_content;
+  const lines = content.split("\n");
+  const firstLine = lines[0].trim();
+  const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
+  const summary = lines.slice(1).join("\n").trim() || note.raw_content;
+  const date = new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const accent = accentFromCategory(note.category?.name, index);
+  return {
+    id: note.id,
+    title,
+    summary,
+    date,
+    accent,
+    tailSide: index % 2 === 0 ? "left" : "right",
+    tags: note.tags,
+    research: note.resources.map(r => ({ title: r.title || r.url, url: r.url })),
+  };
+}
 
 // ── Floating micro-bubbles background ─────────────────────────────────────────
 const BubbleField = () => {
@@ -89,51 +133,14 @@ const FolderIcon = ({ color }: { color: string }) => (
     <path d="M3 7C3 5.9 3.9 5 5 5H10.17C10.7 5 11.21 5.21 11.59 5.59L12.41 6.41C12.79 6.79 13.3 7 13.83 7H19C20.1 7 21 7.9 21 9V18C21 19.1 20.1 20 19 20H5C3.9 20 3 19.1 3 18V7Z"/>
   </svg>
 );
-
-// ── Mock data ──────────────────────────────────────────────────────────────────
-const MOCK_NOTES = [
-  {
-    id: 1, title: "The Nature of Consciousness", date: "Feb 27",
-    tags: ["philosophy", "mind"], accent: "rose" as AccentKey, tailSide: "left",
-    summary: "Explored whether consciousness emerges from physical processes or exists independently. Touched on qualia, the hard problem, and integrated information theory.",
-    research: ["Integrated Information Theory (IIT) — Giulio Tononi", "Global Workspace Theory — Bernard Baars", "Panpsychism and its modern defenders"],
-  },
-  {
-    id: 2, title: "Decentralized Energy Grids", date: "Feb 25",
-    tags: ["energy", "climate"], accent: "periwinkle" as AccentKey, tailSide: "right",
-    summary: "Ideas on peer-to-peer energy trading using blockchain. Neighborhood microgrids could stabilize supply and reduce transmission loss.",
-    research: ["Brooklyn Microgrid Project (LO3 Energy)", "Virtual Power Plants — aggregated DER management", "Transactive energy systems overview"],
-  },
-  {
-    id: 3, title: "Language Shapes Thought", date: "Feb 22",
-    tags: ["linguistics", "cognition"], accent: "sage" as AccentKey, tailSide: "left",
-    summary: "Sapir-Whorf hypothesis revisited. Does the vocabulary available to us constrain or expand the concepts we can form? Color perception across languages as a test case.",
-    research: ["Linguistic relativity — Boroditsky et al.", "Color categorization across cultures (Berlin & Kay)", "Universal Grammar vs. usage-based linguistics"],
-  },
-  {
-    id: 4, title: "Fermented Foods & Gut Health", date: "Feb 19",
-    tags: ["nutrition", "health"], accent: "honey" as AccentKey, tailSide: "right",
-    summary: "Kimchi, kefir, and tempeh introduce live cultures. Gut microbiome diversity correlates with mental health — the gut-brain axis is real and fascinating.",
-    research: ["Gut-brain axis and the vagus nerve", "Stanford fermented foods study (Sonnenburg Lab)", "Psychobiotics — probiotics that influence mood"],
-  },
-  {
-    id: 5, title: "Sleep & Memory Consolidation", date: "Feb 15",
-    tags: ["neuroscience", "learning"], accent: "lavender" as AccentKey, tailSide: "left",
-    summary: "REM sleep enables the hippocampus to replay daily experiences, transferring them to long-term neocortical storage. All-nighters are counterproductive.",
-    research: ["Two-stage memory consolidation — Marr & Squire", "Sleep spindles and declarative memory (Walker Lab)", "Targeted memory reactivation during slow-wave sleep"],
-  },
-  {
-    id: 6, title: "Urban Green Spaces", date: "Feb 12",
-    tags: ["environment", "wellbeing"], accent: "sage" as AccentKey, tailSide: "right",
-    summary: "Access to parks and nature within cities measurably reduces cortisol, improves mood, and fosters community. Green infrastructure as mental health policy.",
-    research: ["Attention Restoration Theory — Kaplan & Kaplan", "Green space and mental health meta-analysis (WHO, 2016)", "Biophilic design in urban planning"],
-  },
-];
-
-type Note = typeof MOCK_NOTES[number];
+const PlusIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
 
 // ── Note Detail Modal ──────────────────────────────────────────────────────────
-const NoteModal = ({ note, onClose }: { note: Note; onClose: () => void }) => {
+const NoteModal = ({ note, onClose }: { note: DisplayNote; onClose: () => void }) => {
   const acc = ACCENTS[note.accent];
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(12px)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
@@ -148,18 +155,24 @@ const NoteModal = ({ note, onClose }: { note: Note; onClose: () => void }) => {
             {note.tags.map(t => <span key={t} style={{ background: acc.tagBg, color: acc.tagText, borderRadius: "20px", padding: "3px 12px", fontSize: "12px", fontFamily: "var(--font-body)", fontWeight: "700" }}>{t}</span>)}
           </div>
           <p style={{ fontSize: "14.5px", color: "#6a5a50", lineHeight: "1.75", fontFamily: "var(--font-body)", marginBottom: "26px" }}>{note.summary}</p>
-          <div style={{ background: "rgba(255,255,255,0.7)", borderRadius: "20px", padding: "18px 20px", border: `1.5px dashed ${acc.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
-              <span style={{ color: acc.tagText }}><SparkleIcon/></span>
-              <span style={{ fontSize: "11px", color: acc.tagText, fontFamily: "var(--font-body)", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase" }}>Explore further</span>
-            </div>
-            {note.research.map((r, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "9px", marginBottom: "9px" }}>
-                <span style={{ color: acc.tagText, flexShrink: 0, marginTop: "3px" }}><ArrowIcon/></span>
-                <span style={{ fontSize: "13.5px", color: "#6a5a50", fontFamily: "var(--font-body)", lineHeight: "1.55" }}>{r}</span>
+          {note.research.length > 0 && (
+            <div style={{ background: "rgba(255,255,255,0.7)", borderRadius: "20px", padding: "18px 20px", border: `1.5px dashed ${acc.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
+                <span style={{ color: acc.tagText }}><SparkleIcon/></span>
+                <span style={{ fontSize: "11px", color: acc.tagText, fontFamily: "var(--font-body)", fontWeight: "700", letterSpacing: "0.08em", textTransform: "uppercase" }}>Explore further</span>
               </div>
-            ))}
-          </div>
+              {note.research.map((r, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "9px", marginBottom: "9px" }}>
+                  <span style={{ color: acc.tagText, flexShrink: 0, marginTop: "3px" }}><ArrowIcon/></span>
+                  {r.url ? (
+                    <a href={r.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "13.5px", color: acc.tagText, fontFamily: "var(--font-body)", lineHeight: "1.55", textDecoration: "underline", textUnderlineOffset: "2px" }}>{r.title}</a>
+                  ) : (
+                    <span style={{ fontSize: "13.5px", color: "#6a5a50", fontFamily: "var(--font-body)", lineHeight: "1.55" }}>{r.title}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <BubbleTail color={acc.bg} borderColor={acc.border} side={note.tailSide}/>
         <div style={{ position: "absolute", bottom: "-50px", left: note.tailSide === "left" ? "22px" : undefined, right: note.tailSide === "right" ? "22px" : undefined, display: "flex", gap: "7px", alignItems: "flex-end", flexDirection: note.tailSide === "right" ? "row-reverse" : "row" }}>
@@ -173,7 +186,7 @@ const NoteModal = ({ note, onClose }: { note: Note; onClose: () => void }) => {
 };
 
 // ── Note Card (rectangular grid) ──────────────────────────────────────────────
-const NoteCard = ({ note, onClick, index }: { note: Note; onClick?: () => void; index: number }) => {
+const NoteCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () => void; index: number }) => {
   const acc = ACCENTS[note.accent];
   const [hovered, setHovered] = useState(false);
   return (
@@ -204,7 +217,7 @@ const NoteCard = ({ note, onClick, index }: { note: Note; onClick?: () => void; 
 };
 
 // ── Folder Result Card ─────────────────────────────────────────────────────────
-const FolderCard = ({ note, onClick, index }: { note: Note; onClick?: () => void; index: number }) => {
+const FolderCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () => void; index: number }) => {
   const acc = ACCENTS[note.accent];
   const [hovered, setHovered] = useState(false);
   return (
@@ -215,7 +228,6 @@ const FolderCard = ({ note, onClick, index }: { note: Note; onClick?: () => void
         animationDelay: `${index * 0.08}s`,
         position: "relative",
       }}>
-      {/* Folder tab */}
       <div style={{
         height: "18px", width: "90px",
         background: acc.folder,
@@ -226,7 +238,6 @@ const FolderCard = ({ note, onClick, index }: { note: Note; onClick?: () => void
         position: "relative", zIndex: 1,
         transition: "width 0.2s ease",
       }}/>
-      {/* Folder body */}
       <div style={{
         background: hovered ? acc.bg : `linear-gradient(160deg, ${acc.folder} 0%, ${acc.bg} 40%)`,
         border: `1.5px solid ${acc.border}`,
@@ -239,10 +250,7 @@ const FolderCard = ({ note, onClick, index }: { note: Note; onClick?: () => void
         transition: "transform 0.22s ease, box-shadow 0.22s ease, background 0.2s ease",
         position: "relative", overflow: "hidden",
       }}>
-        {/* Corner glow */}
         <div style={{ position: "absolute", top: 0, right: 0, width: "80px", height: "80px", background: `radial-gradient(circle at top right, ${acc.dot}40 0%, transparent 70%)`, borderRadius: "0 12px 0 0", pointerEvents: "none" }}/>
-
-        {/* Top row: folder icon + date */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <FolderIcon color={acc.dot}/>
@@ -250,18 +258,12 @@ const FolderCard = ({ note, onClick, index }: { note: Note; onClick?: () => void
           </div>
           <span style={{ fontSize: "11px", color: "#c0b0a0", fontFamily: "var(--font-body)" }}>{note.date}</span>
         </div>
-
-        {/* Title */}
         <div style={{ fontFamily: "var(--font-display)", fontSize: "16px", color: "#3a3028", fontWeight: "600", lineHeight: "1.3", marginBottom: "8px", paddingRight: "12px" }}>
           {note.title}
         </div>
-
-        {/* Summary preview */}
         <p style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", marginBottom: "12px" }}>
           {note.summary}
         </p>
-
-        {/* Tags + research count */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
           <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
             {note.tags.map(t => <span key={t} style={{ background: acc.tagBg, color: acc.tagText, borderRadius: "20px", padding: "2px 9px", fontSize: "10.5px", fontFamily: "var(--font-body)", fontWeight: "700" }}>{t}</span>)}
@@ -276,21 +278,19 @@ const FolderCard = ({ note, onClick, index }: { note: Note; onClick?: () => void
 };
 
 // ── Results Page ───────────────────────────────────────────────────────────────
-const ResultsPage = ({ query, results, onBack, onSelectNote, onQueryChange, onSearch }: {
+const ResultsPage = ({ query, results, isSearching, onBack, onSelectNote, onQueryChange, onSearch }: {
   query: string;
-  results: Note[];
+  results: DisplayNote[];
+  isSearching: boolean;
   onBack: () => void;
-  onSelectNote: (note: Note) => void;
+  onSelectNote: (note: DisplayNote) => void;
   onQueryChange: (query: string) => void;
   onSearch: (query: string) => void;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 24px 80px", position: "relative", zIndex: 1, animation: "pageSlideIn 0.35s cubic-bezier(.22,.68,0,1.1)" }}>
-
-      {/* Results header */}
       <div style={{ width: "100%", maxWidth: "780px", padding: "44px 0 32px" }}>
-        {/* Back + search row */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
           <button onClick={onBack} style={{
             display: "flex", alignItems: "center", gap: "6px",
@@ -306,8 +306,6 @@ const ResultsPage = ({ query, results, onBack, onSelectNote, onQueryChange, onSe
           >
             <BackIcon/> back
           </button>
-
-          {/* Search bar — stays live on results page */}
           <div style={{
             flex: 1, display: "flex", alignItems: "center", gap: "11px",
             background: "rgba(255,255,255,0.88)", backdropFilter: "blur(8px)",
@@ -321,40 +319,47 @@ const ResultsPage = ({ query, results, onBack, onSelectNote, onQueryChange, onSe
               value={query}
               onChange={e => onQueryChange(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && query.trim()) onSearch(query); if (e.key === "Escape") onBack(); }}
-              style={{ flex: 1, background: "none", border: "none", color: "#3a3028", fontSize: "15px", fontFamily: "var(--font-body)", fontWeight: "400" }}
+              style={{ flex: 1, background: "none", border: "none", color: "#3a3028", fontSize: "15px", fontFamily: "var(--font-body)", fontWeight: "400", outline: "none" }}
             />
             {query && <button onClick={() => onQueryChange("")} style={{ background: "none", border: "none", color: "#c0b0a0", cursor: "pointer", flexShrink: 0 }}><CloseIcon/></button>}
           </div>
         </div>
 
-        {/* Results summary */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px" }}>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: "28px", color: "#3a3028", fontWeight: "600", lineHeight: "1.2" }}>
-            {results.length > 0 ? `Found ${results.length} thought${results.length !== 1 ? "s" : ""}` : "No thoughts found"}
-          </h2>
-        </div>
-        <p style={{ fontSize: "13.5px", color: "#b0a090", fontFamily: "var(--font-body)", fontWeight: "300", marginBottom: "28px" }}>
-          {results.length > 0
-            ? <>matching <em style={{ color: "#8a7a6a", fontStyle: "italic" }}>"{query}"</em> across your collection</>
-            : <>nothing matched <em style={{ color: "#8a7a6a", fontStyle: "italic" }}>"{query}"</em> — try different words</>
-          }
-        </p>
-
-        {/* Folder grid */}
-        {results.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px" }}>
-            {results.map((note, i) => (
-              <FolderCard key={note.id} note={note} index={i} onClick={() => onSelectNote(note)}/>
-            ))}
+        {isSearching ? (
+          <div style={{ textAlign: "center", padding: "60px 0", color: "#c0b0a0" }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid rgba(130,175,140,0.3)", borderTopColor: "#82af8c", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }}/>
+            <div style={{ fontSize: "14px", fontFamily: "var(--font-body)", fontWeight: "300" }}>Searching thoughts…</div>
           </div>
         ) : (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "#c0b0a0" }}>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: "48px", marginBottom: "14px", opacity: 0.3 }}>○</div>
-            <div style={{ fontSize: "15px", fontFamily: "var(--font-body)", fontWeight: "300" }}>no thoughts match that search</div>
-            <button onClick={onBack} style={{ marginTop: "20px", background: "none", border: "1.5px solid rgba(180,162,145,0.3)", borderRadius: "12px", padding: "10px 20px", color: "#9a8880", fontFamily: "var(--font-body)", fontSize: "13px", cursor: "pointer" }}>
-              ← back to all thoughts
-            </button>
-          </div>
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "6px" }}>
+              <h2 style={{ fontFamily: "var(--font-display)", fontSize: "28px", color: "#3a3028", fontWeight: "600", lineHeight: "1.2" }}>
+                {results.length > 0 ? `Found ${results.length} thought${results.length !== 1 ? "s" : ""}` : "No thoughts found"}
+              </h2>
+            </div>
+            <p style={{ fontSize: "13.5px", color: "#b0a090", fontFamily: "var(--font-body)", fontWeight: "300", marginBottom: "28px" }}>
+              {results.length > 0
+                ? <>matching <em style={{ color: "#8a7a6a", fontStyle: "italic" }}>"{query}"</em> across your collection</>
+                : <>nothing matched <em style={{ color: "#8a7a6a", fontStyle: "italic" }}>"{query}"</em> — try different words</>
+              }
+            </p>
+
+            {results.length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px" }}>
+                {results.map((note, i) => (
+                  <FolderCard key={note.id} note={note} index={i} onClick={() => onSelectNote(note)}/>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#c0b0a0" }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "48px", marginBottom: "14px", opacity: 0.3 }}>○</div>
+                <div style={{ fontSize: "15px", fontFamily: "var(--font-body)", fontWeight: "300" }}>no thoughts match that search</div>
+                <button onClick={onBack} style={{ marginTop: "20px", background: "none", border: "1.5px solid rgba(180,162,145,0.3)", borderRadius: "12px", padding: "10px 20px", color: "#9a8880", fontFamily: "var(--font-body)", fontSize: "13px", cursor: "pointer" }}>
+                  ← back to all thoughts
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -364,32 +369,44 @@ const ResultsPage = ({ query, results, onBack, onSelectNote, onQueryChange, onSe
 // ── Main App ───────────────────────────────────────────────────────────────────
 export default function SearchableHome() {
   const navigate = useNavigate();
-  const notes = MOCK_NOTES;
+  const { signOut } = useAuth();
   const [query, setQuery] = useState("");
-  const [searchQuery, setSearchQuery] = useState(""); // committed search on Enter
   const [view, setView] = useState<"home" | "results">("home");
-  const [selected, setSelected] = useState<Note | null>(null);
+  const [searchResults, setSearchResults] = useState<DisplayNote[]>([]);
+  const [selected, setSelected] = useState<DisplayNote | null>(null);
 
-  // Home: live-filter as user types
+  const { data: rawNotes = [], isLoading } = useQuery({
+    queryKey: ["notes"],
+    queryFn: () => api.get<NoteResponse[]>("/api/notes/?limit=50"),
+  });
+
+  const notes: DisplayNote[] = rawNotes.map((n, i) => toDisplay(n, i));
+
+  // Live filter on home page
   const liveFiltered = notes.filter(n => {
     const q = query.toLowerCase();
     return !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.tags.some(t => t.includes(q));
   });
 
-  // Results page: filter by committed search term
-  const searchResults = notes.filter(n => {
-    const q = searchQuery.toLowerCase();
-    return !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.tags.some(t => t.includes(q));
+  const searchMutation = useMutation({
+    mutationFn: (q: string) =>
+      api.post<{ notes: NoteResponse[] }>("/api/search/", { query: q, mode: "hybrid" }),
+    onSuccess: (data) => {
+      const results = (data.notes ?? []).map((n, i) => toDisplay(n, i));
+      setSearchResults(results);
+      setView("results");
+    },
   });
 
   const handleSearch = (q: string) => {
-    setSearchQuery(q);
     setView("results");
+    setSearchResults([]);
+    searchMutation.mutate(q);
   };
 
   const handleBack = () => {
     setView("home");
-    setSearchQuery("");
+    setSearchResults([]);
   };
 
   return (
@@ -419,10 +436,16 @@ export default function SearchableHome() {
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(154,160,216,0.1) 0%, transparent 55%), radial-gradient(ellipse 55% 40% at 88% 75%, rgba(130,175,140,0.09) 0%, transparent 50%), radial-gradient(ellipse 45% 38% at 12% 68%, rgba(232,160,176,0.07) 0%, transparent 50%)" }}/>
       <BubbleField/>
 
+      {/* Sign out */}
+      <button onClick={() => signOut().then(() => navigate("/auth"))} style={{ position: "fixed", top: 20, right: 24, zIndex: 10, background: "rgba(255,255,255,0.7)", backdropFilter: "blur(8px)", border: "1.5px solid rgba(200,185,168,0.3)", borderRadius: "12px", padding: "6px 14px", fontSize: "12px", fontFamily: "var(--font-body)", fontWeight: "600", color: "#9a8880", cursor: "pointer" }}>
+        sign out
+      </button>
+
       {view === "results" ? (
         <ResultsPage
           query={query}
           results={searchResults}
+          isSearching={searchMutation.isPending}
           onBack={handleBack}
           onSelectNote={(note) => navigate(`/note/${note.id}`)}
           onQueryChange={setQuery}
@@ -454,7 +477,7 @@ export default function SearchableHome() {
             </div>
           </div>
 
-          {/* Search + Record */}
+          {/* Search */}
           <div style={{ width: "100%", maxWidth: "780px", marginBottom: "32px" }}>
             <div style={{ display: "flex", gap: "10px" }}>
               <div style={{
@@ -479,7 +502,12 @@ export default function SearchableHome() {
               </div>
             </div>
             <p style={{ marginTop: "10px", paddingLeft: "6px", fontSize: "12px", color: "#c0b0a0", fontFamily: "var(--font-body)" }}>
-              {query ? `${liveFiltered.length} thought${liveFiltered.length !== 1 ? "s" : ""} matching — press ↵ for full results` : `${notes.length} thought${notes.length !== 1 ? "s" : ""} floating around`}
+              {isLoading
+                ? "Loading thoughts…"
+                : query
+                  ? `${liveFiltered.length} thought${liveFiltered.length !== 1 ? "s" : ""} matching — press ↵ for full results`
+                  : `${notes.length} thought${notes.length !== 1 ? "s" : ""} floating around`
+              }
             </p>
           </div>
 
@@ -495,10 +523,17 @@ export default function SearchableHome() {
               <span style={{ fontSize: "12px", color: "#c0b0a0", fontFamily: "var(--font-body)" }}>{liveFiltered.length} {liveFiltered.length === 1 ? "note" : "notes"}</span>
             </div>
             <div style={{ maxHeight: "560px", overflowY: liveFiltered.length > 4 ? "auto" : "visible", overflowX: "visible", paddingRight: liveFiltered.length > 4 ? "6px" : "0", paddingBottom: "20px" }}>
-              {liveFiltered.length === 0 ? (
+              {isLoading ? (
+                <div style={{ textAlign: "center", padding: "52px 0 36px", color: "#c0b0a0" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", border: "3px solid rgba(130,175,140,0.3)", borderTopColor: "#82af8c", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }}/>
+                  <div style={{ fontSize: "14px", fontFamily: "var(--font-body)", fontWeight: "300" }}>Loading thoughts…</div>
+                </div>
+              ) : liveFiltered.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "52px 0 36px", color: "#c0b0a0" }}>
                   <div style={{ fontFamily: "var(--font-display)", fontSize: "40px", marginBottom: "12px", opacity: 0.35 }}>○</div>
-                  <div style={{ fontSize: "15px", fontFamily: "var(--font-body)", fontWeight: "300" }}>no thoughts match that search</div>
+                  <div style={{ fontSize: "15px", fontFamily: "var(--font-body)", fontWeight: "300" }}>
+                    {query ? "no thoughts match that search" : "no thoughts yet — add your first one"}
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "14px", paddingTop: "4px" }}>
@@ -518,6 +553,14 @@ export default function SearchableHome() {
           </div>
         </div>
       )}
+
+      {/* FAB */}
+      <button onClick={() => navigate('/note/new')} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#3d6b4a", boxShadow: "0 4px 20px rgba(130,175,140,0.25)", transition: "transform 0.18s, box-shadow 0.18s" }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(130,175,140,0.35)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(130,175,140,0.25)"; }}
+      >
+        <PlusIcon/>
+      </button>
 
       {selected && <NoteModal note={selected} onClose={() => setSelected(null)}/>}
     </>

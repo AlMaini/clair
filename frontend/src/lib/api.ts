@@ -1,12 +1,17 @@
+import { supabase } from './supabase'
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const isFormData = options.body instanceof FormData
   const res = await fetch(`${API_URL}${path}`, {
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       ...options.headers,
     },
     ...options,
@@ -27,7 +32,7 @@ export const api = {
   post: <T>(path: string, body?: unknown, options?: RequestInit) =>
     request<T>(path, {
       method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
       ...options,
     }),
 
