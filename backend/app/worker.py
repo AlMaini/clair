@@ -51,6 +51,75 @@ def process_note(note_id: str) -> None:
         log.error("process_note: note %s not found", note_id)
         return
 
+    # ── 0. Link scraping + summarisation (link notes only) ──────────────────
+    if note["content_type"] == "link":
+        source_url = (note.get("raw_content") or "").strip()
+        if source_url:
+            try:
+                from app.services.scraper import scrape_url
+                from app.services.ai_client import ai_client
+                from app.config import settings as _s
+
+                page_text = asyncio.run(scrape_url(source_url))
+                if page_text:
+                    _LINK_SUMMARISE_PROMPT = (
+                        "You are a concise note-taking assistant. Given the raw text "
+                        "scraped from a webpage, produce a JSON object with three keys:\n"
+                        '  "title": "A short, descriptive title for this note (max 60 chars)",\n'
+                        '  "body": "A clear, well-structured summary capturing the key topics, '
+                        'ideas, and takeaways. Paraphrase — do NOT copy sentences verbatim. '
+                        'Use short paragraphs or bullet points. '
+                        'You may use simple HTML tags (<strong>, <em>, <ul>, <li>, <blockquote>) '
+                        'for formatting.",\n'
+                        '  "tags": ["3-7 lowercase tags relevant to the content"]\n'
+                        "Respond with ONLY the JSON object, no code fences or preamble."
+                    )
+                    resp = asyncio.run(
+                        ai_client.chat.completions.create(
+                            model=_s.organizer_model,
+                            messages=[
+                                {"role": "system", "content": _LINK_SUMMARISE_PROMPT},
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        f"URL: {source_url}\n\n"
+                                        f"PAGE CONTENT:\n{page_text[:6000]}"
+                                    ),
+                                },
+                            ],
+                            temperature=0.3,
+                            max_tokens=1200,
+                        )
+                    )
+                    from app.utils import parse_llm_json
+                    parsed = parse_llm_json(resp.choices[0].message.content)
+                    link_title = parsed.get("title", "").strip()
+                    link_body = parsed.get("body", "").strip()
+
+                    link_tags = parsed.get("tags") or []
+                    # Normalise tags: lowercase, strip whitespace
+                    link_tags = [t.strip().lower() for t in link_tags if isinstance(t, str) and t.strip()][:7]
+
+                    update_payload = {"source_url": source_url}
+                    if link_body:
+                        update_payload["raw_content"] = link_body
+                    if link_title:
+                        update_payload["title"] = link_title
+                    if link_tags:
+                        update_payload["tags"] = link_tags
+                    supabase.table("notes").update(update_payload).eq("id", note_id).execute()
+                    log.info(
+                        "process_note: scraped & summarised link note %s (title=%s, %d chars)",
+                        note_id, link_title, len(link_body),
+                    )
+                else:
+                    supabase.table("notes").update(
+                        {"source_url": source_url}
+                    ).eq("id", note_id).execute()
+                    log.warning("process_note: scrape returned empty for %s", source_url)
+            except Exception as exc:
+                log.error("process_note: link scraping failed for %s: %s", note_id, exc)
+
     # ── 1. Transcription (voice notes only) ──────────────────────────────────
     if note["content_type"] == "voice" and note.get("file_path") and not (note.get("raw_content") or "").strip():
         try:

@@ -2,6 +2,11 @@ import json
 import re
 
 
+def is_url_only(text: str) -> bool:
+    """Return True if *text* is nothing but a single HTTP(S) URL."""
+    return bool(re.fullmatch(r"https?://[^\s]+", text.strip()))
+
+
 def parse_llm_json(content: str) -> dict:
     """Parse JSON from an LLM response, tolerating markdown code fences.
 

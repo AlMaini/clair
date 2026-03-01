@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"          # default for all agents
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
 
     # Per-agent model overrides — fall back to GEMINI_MODEL if unset
     ORGANIZER_MODEL: str = ""   # Agent 1: classify, tag, summarise, assign category

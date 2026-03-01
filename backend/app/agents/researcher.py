@@ -39,6 +39,18 @@ Required keys:
 }
 """
 
+_LINK_QUERY_SYSTEM_PROMPT = """\
+You are a research assistant. The user saved a note by pasting a link. Given the \
+summarised content of the linked page, extract search queries to find resources on \
+the key topics and ideas mentioned. Respond with a single JSON object only.
+
+Required keys:
+{
+  "topic_queries":  ["3-5 short web search queries, each targeting a distinct key topic or idea from the page"],
+  "web_query":      "broader web search query for pages similar to the original link"
+}
+"""
+
 
 async def research_note(note_id: str) -> None:
     """Find and attach external resources to a note."""
@@ -91,11 +103,49 @@ async def research_note(note_id: str) -> None:
         resources.extend(wiki)
 
     elif content_type == "link":
-        # Pasted link: find similar pages
-        web = await _search_web(
-            queries.get("web_query", note.get("source_url") or content[:80])
-        )
-        resources.extend(web)
+        # ── Enhanced link research: per-topic + broad search ─────────────
+        try:
+            lqr = await ai_client.chat.completions.create(
+                model=settings.researcher_model,
+                messages=[
+                    {"role": "system", "content": _LINK_QUERY_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Original URL: {note.get('source_url', '')}\n\n"
+                            f"Summary:\n{content[:2000]}"
+                        ),
+                    },
+                ],
+                temperature=0.2,
+                max_tokens=300,
+            )
+            link_queries = parse_llm_json(lqr.choices[0].message.content)
+        except Exception as exc:
+            log.error("researcher: link query extraction failed for %s: %s", note_id, exc)
+            link_queries = {}
+
+        # Search for each distinct topic
+        for tq in (link_queries.get("topic_queries") or [])[:5]:
+            results = await _search_web(tq, max_results=2)
+            resources.extend(results)
+
+        # Broader "similar pages" search
+        broad_q = link_queries.get("web_query") or queries.get("web_query", "")
+        if broad_q:
+            web = await _search_web(broad_q, max_results=3)
+            resources.extend(web)
+
+        # Deduplicate by URL, exclude the original source
+        seen: set[str] = set()
+        unique: list[dict] = []
+        src = note.get("source_url", "")
+        for r in resources:
+            u = r.get("url", "")
+            if u and u not in seen and u != src:
+                seen.add(u)
+                unique.append(r)
+        resources = unique[:8]
 
     else:
         # image or unknown: web search on processed content
