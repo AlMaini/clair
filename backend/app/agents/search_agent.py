@@ -120,10 +120,10 @@ async def voice_search(
 
 
 async def _interpret_query(query: str) -> dict:
-    """Use Featherless to convert natural language to structured search params."""
+    """Use Gemini to convert natural language to structured search params."""
     try:
         resp = await ai_client.chat.completions.create(
-            model=settings.FEATHERLESS_MODEL,
+            model=settings.search_model,
             messages=[
                 {"role": "system", "content": _INTERPRET_SYSTEM_PROMPT},
                 {"role": "user", "content": query},
