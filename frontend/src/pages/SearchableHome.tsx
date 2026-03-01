@@ -30,13 +30,21 @@ interface DisplayNote {
   isProcessing: boolean;
 }
 
-function accentFromCategory(name: string | undefined, index: number): AccentKey {
+function accentFromCategory(name: string | undefined, noteId: string): AccentKey {
   if (name) {
+    // Hash both category name and note ID for per-note uniqueness within a category
     let hash = 0;
-    for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+    for (const c of name + noteId) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
     return ACCENT_KEYS[hash % ACCENT_KEYS.length];
   }
-  return ACCENT_KEYS[index % ACCENT_KEYS.length];
+  // Fallback: hash the note ID for consistent color
+  let hash = 0;
+  for (const c of noteId) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return ACCENT_KEYS[hash % ACCENT_KEYS.length];
+}
+
+function isValidAccent(color: string | null | undefined): color is AccentKey {
+  return color != null && ACCENT_KEYS.includes(color as AccentKey);
 }
 
 function toDisplay(note: NoteResponse, index: number): DisplayNote {
@@ -52,7 +60,9 @@ function toDisplay(note: NoteResponse, index: number): DisplayNote {
     ? "your voice note is being processed by whisper"
     : note.processed_content || note.raw_content;
   const date = new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const accent = (note.color as AccentKey) || accentFromCategory(note.category?.name, index);
+  // Check localStorage first (user may have set color in editor), then API color, then derive from category/noteId
+  const savedAccent = typeof window !== 'undefined' ? localStorage.getItem(`note-accent-${note.id}`) : null;
+  const accent = isValidAccent(savedAccent) ? savedAccent : isValidAccent(note.color) ? note.color : accentFromCategory(note.category?.name, note.id);
   return {
     id: note.id,
     title,

@@ -16,6 +16,7 @@ All LLM calls go through the Gemini OpenAI-compatible API.
 import asyncio
 import json
 import logging
+import random
 
 from app.config import settings
 from app.services.ai_client import ai_client
@@ -23,6 +24,9 @@ from app.services.supabase import supabase
 from app.utils import parse_llm_json
 
 log = logging.getLogger(__name__)
+
+# Available colors that match frontend accent keys
+ACCENT_COLORS = ["rose", "periwinkle", "sage", "honey", "lavender"]
 
 _SYSTEM_PROMPT = """\
 You are a personal knowledge organizer. Given a new note and the user's existing \
@@ -131,12 +135,15 @@ async def organize_note(note_id: str) -> None:
         "processed_content": result.get("summary"),
         "tags": result.get("tags") or [],
         "category_id": category_id,
-        "related_note_ids": related_note_ids,
     }
     # Only set title if the note doesn't already have one (e.g. link notes
     # get their title from the link-scraping step and it should be kept).
     if not (note.get("title") or "").strip():
         update_fields["title"] = result.get("title")
+    
+    # Assign a random color if the note doesn't have one yet
+    if not note.get("color"):
+        update_fields["color"] = random.choice(ACCENT_COLORS)
 
     await asyncio.to_thread(
         lambda: supabase.table("notes")
