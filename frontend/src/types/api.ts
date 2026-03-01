@@ -22,6 +22,7 @@ export interface NoteResponse {
   file_path: string | null
   related_note_ids: string[]
   created_at: string
+  updated_at?: string
 }
 
 export interface SearchResult {

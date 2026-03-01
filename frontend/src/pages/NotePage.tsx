@@ -153,6 +153,8 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
   const [delConf,  setDelConf]  = useState(false);
   const [resInput, setResInput] = useState("");
   const [accentPicker, setAccentPicker] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [savedRecently, setSavedRecently] = useState(false);
 
   const editorRef  = useRef<HTMLDivElement>(null);
   const titleRef   = useRef<HTMLInputElement>(null);
@@ -176,6 +178,14 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
   useEffect(()=>{
     if(editorRef.current) editorRef.current.innerHTML = note?.body||"";
   },[]);
+
+  // Auto-resize title textarea
+  useEffect(()=>{
+    if(titleRef.current){
+      titleRef.current.style.height = 'auto';
+      titleRef.current.style.height = titleRef.current.scrollHeight + 'px';
+    }
+  },[title]);
 
   // ── Auto-save (800 ms debounce) ───────────────────────────────────────────
   const scheduleSave = useCallback((t: string,b: string,tg: string[])=>{
@@ -269,6 +279,8 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
 
   // ── Accent change ─────────────────────────────────────────────────────────
   const changeAccent = (ak: string) => {
+    // Store accent preference in localStorage
+    localStorage.setItem(`note-accent-${note.id}`, ak);
     onUpdateNote({...note, accent:ak});
     setAccentPicker(false);
   };
@@ -280,6 +292,14 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, [accentPicker]);
+
+  // Show saved state briefly after saving completes
+  useEffect(() => {
+    if (!isSaving && savedRecently) {
+      const timer = setTimeout(() => setSavedRecently(false), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [isSaving, savedRecently]);
 
   if(!note) return null;
 
@@ -298,48 +318,47 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:"#f9f5ef",overflow:"hidden",animation:"edIn 0.28s cubic-bezier(.22,.68,0,1.1)"}}>
 
       {/* ══ TOP CHROME ══ */}
-      <div style={{height:"50px",flexShrink:0,display:"flex",alignItems:"center",gap:"10px",padding:"0 18px",background:acc.bar,backdropFilter:"blur(20px)",borderBottom:`1.5px solid ${acc.border}`,boxShadow:"0 1px 14px rgba(140,120,100,0.06)",zIndex:40}}>
+      <div className="top-bar" style={{height:"50px",flexShrink:0,display:"flex",alignItems:"center",gap:"10px",padding:"0 18px",background:acc.bar,backdropFilter:"blur(20px)",borderBottom:`1.5px solid ${acc.border}`,boxShadow:"0 1px 14px rgba(140,120,100,0.06)",zIndex:40}}>
+        {/* Mobile menu button */}
+        <button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} style={{display:"none",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.55)",border:`1.5px solid ${acc.border}`,borderRadius:"8px",width:"36px",height:"36px",cursor:"pointer",color:"#7a6858",flexShrink:0}} className="mobile-menu-btn">
+          <style>{`.mobile-menu-btn{display:none!important}@media (max-width:768px){.mobile-menu-btn{display:flex!important}}`}</style>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         {/* Back to clair home */}
-        <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:"5px",background:"rgba(255,255,255,0.55)",border:`1.5px solid ${acc.border}`,borderRadius:"10px",padding:"5px 11px",cursor:"pointer",color:"#7a6858",fontFamily:"var(--fb)",fontSize:"12px",fontWeight:"600",transition:"transform 0.12s",flexShrink:0}} onMouseEnter={(e: any)=>e.currentTarget.style.transform="translateX(-2px)"} onMouseLeave={(e: any)=>e.currentTarget.style.transform="translateX(0)"}><BkIcon/>clair</button>
+        <button onClick={onBack} className="back-button" style={{display:"flex",alignItems:"center",gap:"5px",background:"rgba(255,255,255,0.55)",border:`1.5px solid ${acc.border}`,borderRadius:"10px",padding:"5px 11px",cursor:"pointer",color:"#7a6858",fontFamily:"var(--fb)",fontSize:"12px",fontWeight:"600",transition:"transform 0.12s",flexShrink:0}} onMouseEnter={(e: any)=>e.currentTarget.style.transform="translateX(-2px)"} onMouseLeave={(e: any)=>e.currentTarget.style.transform="translateX(0)"}><BkIcon/>clair</button>
         {/* Breadcrumb */}
-        <div style={{flex:1,display:"flex",alignItems:"center",gap:"5px",minWidth:0,overflow:"hidden"}}>
+        <div className="desktop-breadcrumb" style={{flex:1,display:"flex",alignItems:"center",gap:"5px",minWidth:0,overflow:"hidden"}}>
           <span style={{fontSize:"10.5px",color:"#c0b0a0",fontFamily:"var(--fb)",flexShrink:0}}>notes</span>
           <span style={{fontSize:"10.5px",color:"#d4c4b0",flexShrink:0}}>/</span>
           <span style={{fontSize:"12.5px",color:"#7a6858",fontFamily:"var(--fd)",fontWeight:"600",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title||"Untitled"}</span>
         </div>
-        {/* Color Change Button */}
-        <div style={{position:"relative"}}>
-          <button onClick={(e)=>{e.stopPropagation();setAccentPicker(v=>!v);}} style={{display:"flex",alignItems:"center",gap:"6px",background:accentPicker?acc.tagBg:"rgba(255,255,255,0.55)",border:`1.5px solid ${acc.border}`,borderRadius:"10px",padding:"5px 11px",cursor:"pointer",color:acc.tagText,fontFamily:"var(--fb)",fontSize:"12px",fontWeight:"600",transition:"all 0.15s",flexShrink:0}} onMouseEnter={(e: any)=>e.currentTarget.style.background=acc.tagBg} onMouseLeave={(e: any)=>!accentPicker&&(e.currentTarget.style.background="rgba(255,255,255,0.55)")}>
-            <div style={{width:"14px",height:"14px",borderRadius:"50%",background:acc.dot,border:`2px solid ${acc.border}`,flexShrink:0}}/>
-            color
-          </button>
-          {accentPicker&&<div onClick={(e)=>e.stopPropagation()} style={{position:"absolute",top:"46px",right:0,background:"rgba(255,255,255,0.98)",backdropFilter:"blur(16px)",border:"1.5px solid rgba(200,185,168,0.28)",borderRadius:"16px",padding:"12px",display:"flex",flexDirection:"column",gap:"8px",boxShadow:"0 8px 32px rgba(140,120,100,0.16)",zIndex:100,minWidth:"160px"}}>
-            <div style={{fontSize:"11px",fontWeight:"700",color:"#7a6858",fontFamily:"var(--fb)",marginBottom:"2px",textTransform:"uppercase",letterSpacing:"0.5px"}}>Note Color</div>
-            <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
-              {ACCENT_KEYS.map(k=><button key={k} onClick={(e)=>{e.stopPropagation();changeAccent(k);}} title={k.charAt(0).toUpperCase()+k.slice(1)} style={{width:"28px",height:"28px",borderRadius:"50%",background:ACCENTS[k as keyof typeof ACCENTS].dot,border:k===note.accent?`3px solid #3a3028`:`2px solid ${ACCENTS[k as keyof typeof ACCENTS].border}`,cursor:"pointer",transition:"all 0.15s",boxShadow:k===note.accent?"0 2px 8px rgba(0,0,0,0.15)":"none"}} onMouseEnter={(e: any)=>{e.currentTarget.style.transform="scale(1.15)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.15)";}} onMouseLeave={(e: any)=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow=k===note.accent?"0 2px 8px rgba(0,0,0,0.15)":"none";}}/>)}
-            </div>
-          </div>}
-        </div>
         {/* Research toggle */}
-        <button onClick={()=>setShowRes(v=>!v)} style={{display:"flex",alignItems:"center",gap:"4px",background:showRes?acc.tagBg:"rgba(255,255,255,0.5)",border:`1.5px solid ${acc.border}`,borderRadius:"9px",padding:"4px 10px",cursor:"pointer",color:showRes?acc.tagText:"#9a8878",fontSize:"11.5px",fontFamily:"var(--fb)",fontWeight:"600",transition:"background 0.15s"}}><SpkI/>research</button>
+        <button onClick={()=>setShowRes(v=>!v)} style={{display:"flex",alignItems:"center",gap:"4px",background:showRes?acc.tagBg:"rgba(255,255,255,0.5)",border:`1.5px solid ${acc.border}`,borderRadius:"9px",padding:"4px 10px",cursor:"pointer",color:showRes?acc.tagText:"#9a8878",fontSize:"11.5px",fontFamily:"var(--fb)",fontWeight:"600",transition:"background 0.15s",flexShrink:0}}><SpkI/>research</button>
         {/* Delete button */}
         {!delConf ? (
-          <button onClick={()=>setDelConf(true)} style={{display:"flex",alignItems:"center",gap:"4px",background:"rgba(220,100,100,0.08)",border:"1.5px solid rgba(220,100,100,0.25)",borderRadius:"9px",padding:"4px 10px",cursor:"pointer",color:"#b05050",fontSize:"11.5px",fontFamily:"var(--fb)",fontWeight:"600",transition:"all 0.15s"}} onMouseEnter={(e: any)=>{e.currentTarget.style.background="rgba(220,100,100,0.15)";e.currentTarget.style.borderColor="rgba(220,100,100,0.4)";}} onMouseLeave={(e: any)=>{e.currentTarget.style.background="rgba(220,100,100,0.08)";e.currentTarget.style.borderColor="rgba(220,100,100,0.25)";}}><TrashI/>delete</button>
+          <button onClick={()=>setDelConf(true)} style={{display:"flex",alignItems:"center",gap:"4px",background:"rgba(220,100,100,0.08)",border:"1.5px solid rgba(220,100,100,0.25)",borderRadius:"9px",padding:"4px 10px",cursor:"pointer",color:"#b05050",fontSize:"11.5px",fontFamily:"var(--fb)",fontWeight:"600",transition:"all 0.15s",flexShrink:0}} onMouseEnter={(e: any)=>{e.currentTarget.style.background="rgba(220,100,100,0.15)";e.currentTarget.style.borderColor="rgba(220,100,100,0.4)";}} onMouseLeave={(e: any)=>{e.currentTarget.style.background="rgba(220,100,100,0.08)";e.currentTarget.style.borderColor="rgba(220,100,100,0.25)";}}><TrashI/>delete</button>
         ) : (
-          <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
-            <button onClick={()=>setDelConf(false)} style={{padding:"4px 8px",background:"rgba(255,255,255,0.55)",border:`1.5px solid ${acc.border}`,borderRadius:"8px",fontSize:"10.5px",fontFamily:"var(--fb)",fontWeight:"600",color:"#7a6858",cursor:"pointer"}}>cancel</button>
-            <button onClick={onDeleteNote} style={{padding:"4px 8px",background:"#dc6464",border:"1.5px solid #c85050",borderRadius:"8px",fontSize:"10.5px",fontFamily:"var(--fb)",fontWeight:"700",color:"#fff",cursor:"pointer"}}>confirm</button>
+          <div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
+            <button onClick={()=>setDelConf(false)} style={{padding:"4px 8px",background:"rgba(255,255,255,0.55)",border:`1.5px solid ${acc.border}`,borderRadius:"8px",fontSize:"10.5px",fontFamily:"var(--fb)",fontWeight:"600",color:"#7a6858",cursor:"pointer",flexShrink:0}}>cancel</button>
+            <button onClick={onDeleteNote} style={{padding:"4px 8px",background:"#dc6464",border:"1.5px solid #c85050",borderRadius:"8px",fontSize:"10.5px",fontFamily:"var(--fb)",fontWeight:"700",color:"#fff",cursor:"pointer",flexShrink:0}}>confirm</button>
           </div>
         )}
         {/* Save button */}
-        <button onClick={onSave} disabled={isSaving} style={{display:"flex",alignItems:"center",gap:"5px",background:isSaving?"rgba(130,175,140,0.4)":"linear-gradient(145deg, #82af8c, #6a9878)",border:`1.5px solid ${isSaving?"rgba(130,175,140,0.3)":"rgba(106,152,120,0.5)"}`,borderRadius:"10px",padding:"5px 12px",cursor:isSaving?"wait":"pointer",color:"#fff",fontSize:"12px",fontFamily:"var(--fb)",fontWeight:"700",transition:"all 0.15s",flexShrink:0,boxShadow:isSaving?"none":"0 2px 8px rgba(106,152,120,0.25)"}} onMouseEnter={(e: any)=>!isSaving&&(e.currentTarget.style.transform="translateY(-1px)",e.currentTarget.style.boxShadow="0 4px 12px rgba(106,152,120,0.35)")} onMouseLeave={(e: any)=>!isSaving&&(e.currentTarget.style.transform="translateY(0)",e.currentTarget.style.boxShadow="0 2px 8px rgba(106,152,120,0.25)")}>
-          {isSaving?<div style={{width:"12px",height:"12px",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>:<SpkI/>}
-          {isSaving?"analyzing...":"save & analyze"}
+        <button onClick={()=>{onSave();setSavedRecently(true);}} disabled={isSaving||savedRecently} style={{display:"flex",alignItems:"center",gap:"5px",background:savedRecently?"linear-gradient(145deg, #82af8c, #6a9878)":isSaving?"rgba(130,175,140,0.4)":"linear-gradient(145deg, #82af8c, #6a9878)",border:`1.5px solid ${savedRecently?"rgba(106,152,120,0.5)":isSaving?"rgba(130,175,140,0.3)":"rgba(106,152,120,0.5)"}`,borderRadius:"10px",padding:"5px 12px",cursor:(isSaving||savedRecently)?"default":"pointer",color:"#fff",fontSize:"12px",fontFamily:"var(--fb)",fontWeight:"700",transition:"all 0.15s",flexShrink:0,boxShadow:(isSaving||savedRecently)?"none":"0 2px 8px rgba(106,152,120,0.25)"}} onMouseEnter={(e: any)=>!(isSaving||savedRecently)&&(e.currentTarget.style.transform="translateY(-1px)",e.currentTarget.style.boxShadow="0 4px 12px rgba(106,152,120,0.35)")} onMouseLeave={(e: any)=>!(isSaving||savedRecently)&&(e.currentTarget.style.transform="translateY(0)",e.currentTarget.style.boxShadow="0 2px 8px rgba(106,152,120,0.25)")}>
+          {savedRecently?<ChkI/>:isSaving?<div style={{width:"12px",height:"12px",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>:<SpkI/>}
+          {savedRecently?"saved!":isSaving?"analyzing...":"save & analyze"}
         </button>
-        {/* Save status */}
-        <div style={{display:"flex",alignItems:"center",gap:"3px",fontSize:"11px",color:saved?"#82af8c":"#c0b0a0",fontFamily:"var(--fb)",transition:"color 0.35s",flexShrink:0}}>
+        {/* Save status - hidden, kept for desktop auto-save indicator */}
+        <div style={{display:"flex",alignItems:"center",gap:"3px",fontSize:"11px",color:saved?"#82af8c":"#c0b0a0",fontFamily:"var(--fb)",transition:"color 0.35s",flexShrink:0,opacity:0,pointerEvents:"none"}}>
           {saved?<ChkI/>:<div style={{width:"10px",height:"10px",border:"1.5px solid #c0b0a0",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.85s linear infinite"}}/>}
           {saved?"saved":"saving"}
+        </div>
+      </div>
+
+      {/* Mobile breadcrumb - shown below top bar on mobile only */}
+      <div className="mobile-breadcrumb" style={{display:"none",padding:"8px 16px",background:acc.bg,borderBottom:`1px solid ${acc.border}`,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:"5px"}}>
+          <span style={{fontSize:"13px",color:"#7a6858",fontFamily:"var(--fd)",fontWeight:"600",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title||"Untitled"}</span>
         </div>
       </div>
 
@@ -347,7 +366,19 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
       <div style={{flex:1,display:"flex",overflow:"hidden"}}>
 
         {/* ─── LEFT SIDEBAR: Note List ─── */}
-        <div style={{width:"230px",flexShrink:0,borderRight:`1.5px solid ${acc.border}`,background:acc.sidebar,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div className={`note-sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`} style={{width:"230px",flexShrink:0,borderRight:`1.5px solid ${acc.border}`,background:acc.sidebar,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          {/* Mobile close button */}
+          {mobileMenuOpen && (
+            <div style={{padding:"12px",borderBottom:`1px solid ${acc.border}`,display:"none",flexDirection:"column",gap:"8px"}} className="mobile-close-btn">
+              <style>{`.mobile-close-btn{display:none!important}@media (max-width:768px){.mobile-close-btn{display:flex!important}}`}</style>
+              <button onClick={()=>setMobileMenuOpen(false)} style={{display:"flex",alignItems:"center",gap:"6px",background:"rgba(255,255,255,0.7)",border:`1.5px solid ${acc.border}`,borderRadius:"10px",padding:"8px 12px",cursor:"pointer",color:"#7a6858",fontFamily:"var(--fb)",fontSize:"13px",fontWeight:"600",width:"100%",justifyContent:"center"}}>
+                <XIcon/> Close Menu
+              </button>
+              <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:"4px",background:"rgba(255,255,255,0.5)",border:`1.5px solid ${acc.border}`,borderRadius:"8px",padding:"6px 10px",cursor:"pointer",color:"#7a6858",fontFamily:"var(--fb)",fontSize:"11.5px",fontWeight:"500",width:"auto",justifyContent:"flex-start"}}>
+                <BkIcon/> Back
+              </button>
+            </div>
+          )}
           {/* Sidebar header */}
           <div style={{padding:"12px 12px 8px",borderBottom:`1px solid ${acc.border}`,flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"8px"}}>
@@ -365,7 +396,7 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
             {sidebarNotes.map((n: any)=>{
               const a=ACCENTS[n.accent as keyof typeof ACCENTS]; const isA=n.id===note.id;
               return (
-                <div key={n.id} onClick={()=>onSelectNote(n.id)} style={{padding:"9px 11px",borderRadius:"11px",cursor:"pointer",marginBottom:"3px",background:isA?a.tagBg:"transparent",border:`1.5px solid ${isA?a.border:"transparent"}`,transition:"background 0.12s,border-color 0.12s"}}>
+                <div key={n.id} onClick={()=>{onSelectNote(n.id);setMobileMenuOpen(false);}} style={{padding:"9px 11px",borderRadius:"11px",cursor:"pointer",marginBottom:"3px",background:isA?a.tagBg:"transparent",border:`1.5px solid ${isA?a.border:"transparent"}`,transition:"background 0.12s,border-color 0.12s"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
                     <div style={{width:7,height:7,borderRadius:"50%",background:a.dot,flexShrink:0}}/>
                     <span style={{fontFamily:"var(--fd)",fontSize:"12.5px",color:isA?"#2e2620":"#5a4a3a",fontWeight:isA?"600":"400",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:"1.3"}}>{n.title||"Untitled"}</span>
@@ -382,7 +413,7 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
 
           {/* Formatting toolbar */}
-          <div style={{padding:"5px 20px",borderBottom:`1px solid ${acc.border}`,background:"rgba(255,255,255,0.5)",display:"flex",alignItems:"center",gap:"1px",flexShrink:0,flexWrap:"wrap"}}>
+          <div className="toolbar" style={{padding:"5px 20px",borderBottom:`1px solid ${acc.border}`,background:"rgba(255,255,255,0.5)",display:"flex",alignItems:"center",gap:"1px",flexShrink:0,flexWrap:"wrap"}}>
             {/* Text style */}
             <TB onClick={()=>fmt("bold")}      tip="Bold (⌘B)"><BldI/></TB>
             <TB onClick={()=>fmt("italic")}    tip="Italic (⌘I)"><ItalI/></TB>
@@ -402,27 +433,32 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
             <TB onClick={()=>fmtVal("formatBlock","pre")}        tip="Code block"><span style={{fontFamily:"monospace",fontSize:"11px"}}>{"</>"}</span></TB>
             <TB onClick={insertHR} tip="Divider"><span style={{fontSize:"10px",letterSpacing:"-1px"}}>───</span></TB>
             <TB onClick={promptLink} tip="Insert link (⌘K)"><LkI/></TB>
+            <div style={{width:"1px",height:"18px",background:acc.border,margin:"0 4px"}}/>
+            {/* Color picker */}
+            <div style={{position:"relative"}}>
+              <TB onClick={(e: any)=>{e.stopPropagation();setAccentPicker(v=>!v);}} tip="Note color" active={accentPicker}>
+                <div style={{width:"14px",height:"14px",borderRadius:"50%",background:acc.dot,border:"1.5px solid rgba(0,0,0,0.1)"}}></div>
+              </TB>
+              {accentPicker&&(
+                <div onClick={(e: any)=>e.stopPropagation()} style={{position:"absolute",top:"32px",right:0,background:"rgba(255,255,255,0.97)",border:`1.5px solid ${acc.border}`,borderRadius:"10px",padding:"8px",boxShadow:"0 4px 16px rgba(100,90,80,0.15)",display:"flex",gap:"6px",zIndex:100}}>
+                  {ACCENT_KEYS.map((ak)=>{
+                    const a=ACCENTS[ak as keyof typeof ACCENTS];
+                    return (<button key={ak} onClick={()=>changeAccent(ak)} style={{width:"28px",height:"28px",borderRadius:"50%",background:a.dot,border:note.accent===ak?`3px solid ${a.tagText}`:`2px solid ${a.border}`,cursor:"pointer",transition:"all 0.15s",flexShrink:0}} onMouseEnter={(e: any)=>e.currentTarget.style.transform="scale(1.1)"} onMouseLeave={(e: any)=>e.currentTarget.style.transform="scale(1)"}/>);
+                  })}
+                </div>
+              )}
+            </div>
             <div style={{flex:1}}/>
             {/* Undo / Redo */}
             <TB onClick={()=>fmt("undo")} tip="Undo (⌘Z)"><span style={{fontSize:"13px"}}>↩</span></TB>
             <TB onClick={()=>fmt("redo")} tip="Redo (⌘Y)"><span style={{fontSize:"13px"}}>↪</span></TB>
-            <div style={{width:"1px",height:"18px",background:acc.border,margin:"0 4px"}}/>
-            {/* Delete */}
-            {!delConf
-              ? <TB onClick={()=>setDelConf(true)} tip="Delete note"><span style={{color:"#cc8888"}}><TrashI/></span></TB>
-              : <div style={{display:"flex",alignItems:"center",gap:"5px",padding:"0 4px"}}>
-                  <span style={{fontSize:"10.5px",color:"#cc8888",fontFamily:"var(--fb)",whiteSpace:"nowrap"}}>delete?</span>
-                  <button onClick={()=>{onDeleteNote(note.id);setDelConf(false);}} style={{background:"#cc8888",border:"none",borderRadius:"5px",padding:"2px 8px",color:"#fff",fontSize:"10.5px",fontFamily:"var(--fb)",cursor:"pointer",fontWeight:"700"}}>yes</button>
-                  <button onClick={()=>setDelConf(false)} style={{background:"rgba(0,0,0,0.06)",border:"none",borderRadius:"5px",padding:"2px 8px",color:"#7a6858",fontSize:"10.5px",fontFamily:"var(--fb)",cursor:"pointer"}}>no</button>
-                </div>
-            }
           </div>
 
           {/* ── Scrollable writing area ── */}
           <div style={{flex:1,overflowY:"auto"}}>
 
             {/* Note metadata header */}
-            <div style={{padding:"30px 48px 0",background:`linear-gradient(180deg,${acc.bg} 0%,transparent 100%)`,flexShrink:0}}>
+            <div className="note-header" style={{padding:"24px 48px 0",background:`linear-gradient(180deg,${acc.bg} 0%,transparent 100%)`,flexShrink:0}}>
               {/* Tags row */}
               <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center",marginBottom:"14px"}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:acc.dot}}/>
@@ -436,18 +472,27 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
                   <span style={{color:"#c0b0a0",transform:"scale(0.8)"}}><PlusI/></span>
                   <input value={newTag} onChange={(e)=>setNewTag(e.target.value)} onKeyDown={addTag} placeholder="tag…" style={{background:"none",border:"none",fontSize:"10.5px",color:"#9a8878",fontFamily:"var(--fb)",width:"42px",outline:"none"}}/>
                 </div>
-                <span style={{fontSize:"10.5px",color:"#c0b0a0",fontFamily:"var(--fb)",marginLeft:"4px"}}>{note.date}</span>
+              </div>
+              {/* Last edited date */}
+              <div style={{fontSize:"11px",color:"#b0a090",fontFamily:"var(--fb)",marginBottom:"18px",fontStyle:"italic"}}>
+                Last edited: {note.lastEdited || note.date}
               </div>
 
               {/* Editable title */}
-              <input ref={titleRef} value={title} onChange={handleTitleChange} placeholder="Note title…"
-                style={{width:"100%",background:"none",border:"none",outline:"none",fontFamily:"var(--fd)",fontSize:"clamp(20px,3.2vw,34px)",fontWeight:"700",color:"#1e1a16",lineHeight:"1.15",marginBottom:"4px"}}/>
+              <textarea ref={titleRef as any} value={title} onChange={handleTitleChange} placeholder="Note title…"
+                className="title-input"
+                rows={1}
+                onInput={(e: any) => {
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                style={{width:"100%",background:"none",border:"none",outline:"none",fontFamily:"var(--fd)",fontSize:"clamp(20px,3.2vw,34px)",fontWeight:"700",color:"#1e1a16",lineHeight:"1.15",marginBottom:"2px",resize:"none",overflow:"hidden"}}/>
               {/* Accent underline */}
-              <div style={{width:"48px",height:"3px",background:`linear-gradient(90deg,${acc.dot},transparent)`,borderRadius:"2px",marginBottom:"22px"}}/>
+              <div style={{width:"48px",height:"3px",background:`linear-gradient(90deg,${acc.dot},transparent)`,borderRadius:"2px",marginBottom:"4px"}}/>
             </div>
 
             {/* ════ THE CONTENTEDITABLE EDITOR ════ */}
-            <div style={{padding:"0 48px 80px",position:"relative"}}>
+            <div className="editor-content" style={{padding:"0 48px 80px",position:"relative"}}>
               <div
                 ref={editorRef}
                 contentEditable
@@ -471,7 +516,7 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
           </div>
 
           {/* Status bar */}
-          <div style={{height:"28px",flexShrink:0,borderTop:`1px solid ${acc.border}`,background:"rgba(255,255,255,0.38)",display:"flex",alignItems:"center",gap:"16px",padding:"0 48px",fontSize:"10.5px",color:"#c0b0a0",fontFamily:"var(--fb)"}}>
+          <div className="status-bar" style={{height:"28px",flexShrink:0,borderTop:`1px solid ${acc.border}`,background:"rgba(255,255,255,0.38)",display:"flex",alignItems:"center",gap:"16px",padding:"0 48px",fontSize:"10.5px",color:"#c0b0a0",fontFamily:"var(--fb)"}}>
             <span>{wordCount} word{wordCount!==1?"s":""}</span>
             <span>{note.date}</span>
             <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:"3px",color:saved?"#82af8c":"#c0b0a0",transition:"color 0.35s"}}>
@@ -483,7 +528,14 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
 
         {/* ─── RIGHT: Research Panel ─── */}
         {showRes&&(
-          <div style={{width:"256px",flexShrink:0,borderLeft:`1.5px solid ${acc.border}`,background:acc.bar,backdropFilter:"blur(12px)",display:"flex",flexDirection:"column",overflow:"hidden",animation:"sideIn 0.22s ease"}}>
+          <div className={`research-panel ${showRes ? 'mobile-open' : ''}`} style={{width:"256px",flexShrink:0,borderLeft:`1.5px solid ${acc.border}`,background:acc.bar,backdropFilter:"blur(12px)",display:"flex",flexDirection:"column",overflow:"hidden",animation:"sideIn 0.22s ease"}}>
+            {/* Mobile close button */}
+            <div style={{display:"none",padding:"12px",borderBottom:`1px solid ${acc.border}`}} className="mobile-research-close">
+              <style>{`.mobile-research-close{display:none!important}@media (max-width:768px){.mobile-research-close{display:block!important}}`}</style>
+              <button onClick={()=>setShowRes(false)} style={{display:"flex",alignItems:"center",gap:"6px",background:"rgba(255,255,255,0.7)",border:`1.5px solid ${acc.border}`,borderRadius:"10px",padding:"8px 12px",cursor:"pointer",color:"#7a6858",fontFamily:"var(--fb)",fontSize:"13px",fontWeight:"600",width:"100%",justifyContent:"center"}}>
+                <XIcon/> Close Research
+              </button>
+            </div>
             <div style={{padding:"16px 16px 11px",borderBottom:`1px solid ${acc.border}`,flexShrink:0}}>
               <div style={{display:"flex",alignItems:"center",gap:"5px",marginBottom:"2px"}}>
                 <span style={{color:acc.tagText}}><SpkI/></span>
@@ -559,14 +611,19 @@ export default function NotePage() {
       const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
       const body = lines.slice(1).join("\n").trim() || fetchedNote.raw_content;
       
+      // Check for saved accent preference in localStorage, otherwise derive from category
+      const savedAccent = localStorage.getItem(`note-accent-${fetchedNote.id}`);
+      const accent = savedAccent || accentFromCategory(fetchedNote.category?.name, fetchedNote.id);
+      
       setLocalNote({
         id: fetchedNote.id,
         title,
         body,
         tags: fetchedNote.tags,
-        accent: accentFromCategory(fetchedNote.category?.name, fetchedNote.id),
+        accent,
         summary: fetchedNote.processed_content?.slice(0, 140) || "",
         date: new Date(fetchedNote.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        lastEdited: new Date(fetchedNote.updated_at || fetchedNote.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
         research: fetchedNote.resources.map(r => r.title || r.url),
       });
     }
@@ -717,12 +774,17 @@ export default function NotePage() {
     const lines = content.split("\n");
     const firstLine = lines[0].trim();
     const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
+    
+    // Check for saved accent preference in localStorage, otherwise derive from category
+    const savedAccent = localStorage.getItem(`note-accent-${n.id}`);
+    const accent = savedAccent || accentFromCategory(n.category?.name, n.id);
+    
     return {
       id: n.id,
       title,
       date: new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       tags: n.tags,
-      accent: accentFromCategory(n.category?.name, n.id),
+      accent,
       body: "",
       summary: "",
       research: [],
@@ -769,6 +831,39 @@ export default function NotePage() {
         @keyframes floatIn{from{opacity:0;transform:translateY(13px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
         @keyframes edIn{from{opacity:0;transform:translateX(24px);}to{opacity:1;transform:translateX(0);}}
         @keyframes sideIn{from{opacity:0;transform:translateX(12px);}to{opacity:1;transform:translateX(0);}}
+        @keyframes slideIn{from{transform:translateX(-100%);}to{transform:translateX(0);}}
+        @keyframes slideInRight{from{transform:translateX(100%);}to{transform:translateX(0);}}
+
+        /* Mobile-specific styles */
+        @media (max-width: 768px) {
+          .note-sidebar {display: none !important;}
+          .note-sidebar.mobile-open {display: flex !important; position: fixed !important; left: 0; top: 0; bottom: 0; right: 0; width: 100% !important; z-index: 200; animation: slideIn 0.3s ease;}
+          .research-panel {display: none !important;}
+          .research-panel.mobile-open {display: flex !important; position: fixed !important; right: 0; top: 0; bottom: 0; left: 0; width: 100% !important; z-index: 200; animation: slideInRight 0.3s ease;}
+          .toolbar {display: none !important;}
+          .top-bar {padding: 0 8px !important; gap: 4px !important; height: 52px !important; display: flex !important; align-items: center !important;}
+          .top-bar button {padding: 6px 8px !important; font-size: 11px !important; min-width: fit-content !important;}
+          .top-bar > .desktop-breadcrumb {display: none !important;}
+          .top-bar > button:not(.mobile-menu-btn):not(.back-button) {margin-left: auto !important;}
+          .desktop-breadcrumb {display: none !important;}
+          .mobile-breadcrumb {display: none !important;}
+          .back-button {display: none !important;}
+          .mobile-menu-btn {margin-right: auto !important;}
+          .editor-content {padding: 20px 16px 60px !important;}
+          .note-header {padding: 20px 16px 0 !important;}
+          .status-bar {padding: 0 16px !important;}
+          [contenteditable] {font-size: 16px !important; /* Prevents zoom on iOS */}
+          input, textarea {font-size: 16px !important; /* Prevents zoom on iOS */}
+          .mobile-hide {display: none !important;}
+          .title-input {font-size: 24px !important;}
+        }
+
+        @media (max-width: 480px) {
+          .top-bar {gap: 4px !important;}
+          .editor-content {padding: 16px 12px 60px !important;}
+          .note-header {padding: 16px 12px 0 !important;}
+          .title-input {font-size: 22px !important;}
+        }
       `}</style>
 
       <NoteEditor

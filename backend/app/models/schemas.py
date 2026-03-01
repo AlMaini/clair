@@ -27,6 +27,7 @@ class NoteResponse(BaseModel):
     file_path: str | None
     related_note_ids: list[str]
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class SearchQuery(BaseModel):
