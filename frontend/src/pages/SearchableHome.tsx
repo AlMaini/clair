@@ -315,7 +315,7 @@ const TranscribeModal = ({
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(18,14,10,0.72)", backdropFilter: "blur(20px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+      style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(20px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={isRecording ? undefined : onClose}
     >
       <div
@@ -324,30 +324,30 @@ const TranscribeModal = ({
       >
         {/* Card */}
         <div style={{
-          background: "linear-gradient(160deg, #1e1812 0%, #16120e 100%)",
-          border: "1.5px solid rgba(255,240,220,0.08)",
+          background: "linear-gradient(150deg, #fffef9 0%, #fdf5ec 100%)",
+          border: "2px solid rgba(180,162,145,0.28)",
           borderRadius: "28px",
           padding: "36px 32px 28px",
-          boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)",
+          boxShadow: "0 12px 48px rgba(160,140,120,0.14), 0 0 0 8px rgba(255,255,255,0.5)",
           overflow: "hidden",
           position: "relative",
         }}>
           {/* Subtle ambient glow */}
-          <div style={{ position: "absolute", top: "-60px", left: "50%", transform: "translateX(-50%)", width: "200px", height: "200px", background: isRecording ? "radial-gradient(circle, rgba(232,160,160,0.12) 0%, transparent 70%)" : "radial-gradient(circle, rgba(130,175,140,0.1) 0%, transparent 70%)", pointerEvents: "none", transition: "background 0.6s ease" }}/>
+          <div style={{ position: "absolute", top: "-60px", left: "50%", transform: "translateX(-50%)", width: "200px", height: "200px", background: isRecording ? "radial-gradient(circle, rgba(232,160,160,0.2) 0%, transparent 70%)" : "radial-gradient(circle, rgba(130,175,140,0.15) 0%, transparent 70%)", pointerEvents: "none", transition: "background 0.6s ease" }}/>
 
           {/* Close */}
           {!isRecording && !isUploading && (
-            <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.07)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.4)" }}>
+            <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
               <CloseIcon/>
             </button>
           )}
 
           {/* Title */}
           <div style={{ marginBottom: "28px" }}>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: "rgba(255,248,238,0.92)", fontWeight: "600", marginBottom: "6px", letterSpacing: "-0.01em" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: "#3a3028", fontWeight: "600", marginBottom: "6px", letterSpacing: "-0.01em" }}>
               {titles[phase]}
             </div>
-            <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: isError ? "#e8a0a0" : "rgba(255,240,220,0.38)", fontWeight: "300", letterSpacing: "0.02em", transition: "color 0.3s" }}>
+            <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: isError ? "#b05050" : "#b0a090", fontWeight: "300", letterSpacing: "0.02em", transition: "color 0.3s" }}>
               {subtitles[phase]}
             </div>
           </div>
@@ -359,17 +359,17 @@ const TranscribeModal = ({
             {isIdle && (
               <div style={{ position: "relative", width: "100px", height: "100px" }}>
                 {/* Pulse rings */}
-                <div style={{ position: "absolute", inset: "-16px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.2)", animation: "pulseRing 2.4s ease-out infinite" }}/>
-                <div style={{ position: "absolute", inset: "-8px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.15)", animation: "pulseRing 2.4s ease-out infinite 0.6s" }}/>
-                <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(130,175,140,0.25), rgba(106,152,120,0.15))", border: "1.5px solid rgba(130,175,140,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(130,175,140,0.9)", boxShadow: "0 0 32px rgba(130,175,140,0.12), inset 0 1px 0 rgba(255,255,255,0.05)" }}>
+                <div style={{ position: "absolute", inset: "-16px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.3)", animation: "pulseRing 2.4s ease-out infinite" }}/>
+                <div style={{ position: "absolute", inset: "-8px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.25)", animation: "pulseRing 2.4s ease-out infinite 0.6s" }}/>
+                <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", color: "#5a9468", boxShadow: "0 4px 24px rgba(130,175,140,0.2), inset 0 1px 0 rgba(255,255,255,0.8)" }}>
                   <MicIcon/>
                 </div>
               </div>
             )}
 
             {(phase === "requesting") && (
-              <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(200,185,165,0.12), rgba(180,165,145,0.08))", border: "1.5px solid rgba(200,185,165,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(200,185,165,0.5)" }}>
-                <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(200,185,165,0.3)", borderTopColor: "rgba(200,185,165,0.7)", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
+              <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.35)", display: "flex", alignItems: "center", justifyContent: "center", color: "#7aab86", boxShadow: "0 4px 20px rgba(130,175,140,0.15)" }}>
+                <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(130,175,140,0.3)", borderTopColor: "#7aab86", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
               </div>
             )}
 
@@ -381,35 +381,35 @@ const TranscribeModal = ({
                     <div key={i} style={{
                       width: "3px", borderRadius: "2px",
                       height: `${h}px`,
-                      background: `linear-gradient(to top, rgba(232,160,160,0.9), rgba(200,130,130,0.5))`,
+                      background: `linear-gradient(to top, #e8a0a0, #dc8c8c)`,
                       transition: "height 0.08s ease",
-                      boxShadow: h > 20 ? "0 0 6px rgba(232,160,160,0.4)" : "none",
+                      boxShadow: h > 20 ? "0 0 8px rgba(220,140,140,0.35)" : "none",
                     }}/>
                   ))}
                 </div>
                 {/* Rec indicator */}
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 8px rgba(232,112,112,0.6)" }}/>
-                  <span style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "rgba(255,240,220,0.5)", letterSpacing: "0.12em", fontWeight: "600" }}>REC</span>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#dc6464", animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 8px rgba(220,100,100,0.4)" }}/>
+                  <span style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "#b05050", letterSpacing: "0.12em", fontWeight: "600" }}>REC</span>
                 </div>
               </>
             )}
 
             {isUploading && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px" }}>
-                <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(130,175,140,0.15), rgba(106,152,120,0.08))", border: "1.5px solid rgba(130,175,140,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(130,175,140,0.25)", borderTopColor: "rgba(130,175,140,0.8)", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
+                <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.35)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(130,175,140,0.15)" }}>
+                  <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(130,175,140,0.3)", borderTopColor: "#7aab86", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
                 </div>
                 <div style={{ display: "flex", gap: "5px" }}>
                   {[0, 1, 2].map(i => (
-                    <div key={i} style={{ width: "5px", height: "5px", borderRadius: "50%", background: "rgba(130,175,140,0.6)", animation: `bounce 1.2s ease-in-out infinite`, animationDelay: `${i * 0.2}s` }}/>
+                    <div key={i} style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#7aab86", animation: `bounce 1.2s ease-in-out infinite`, animationDelay: `${i * 0.2}s` }}/>
                   ))}
                 </div>
               </div>
             )}
 
             {isError && (
-              <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "rgba(220,100,100,0.1)", border: "1.5px solid rgba(220,100,100,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>
+              <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "rgba(220,100,100,0.12)", border: "2px solid rgba(220,100,100,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px", color: "#b05050", boxShadow: "0 4px 20px rgba(220,100,100,0.15)" }}>
                 ×
               </div>
             )}
@@ -420,9 +420,9 @@ const TranscribeModal = ({
             {isIdle && (
               <button
                 onClick={startRecording}
-                style={{ flex: 1, background: "linear-gradient(135deg, rgba(130,175,140,0.28), rgba(106,152,120,0.2))", color: "rgba(180,230,190,0.9)", border: "1.5px solid rgba(130,175,140,0.3)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", fontFamily: "var(--font-body)", letterSpacing: "0.01em", transition: "all 0.18s", boxShadow: "0 2px 16px rgba(130,175,140,0.08)" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(130,175,140,0.38), rgba(106,152,120,0.28))"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(130,175,140,0.18)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(130,175,140,0.28), rgba(106,152,120,0.2))"; e.currentTarget.style.boxShadow = "0 2px 16px rgba(130,175,140,0.08)"; }}
+                style={{ flex: 1, background: "linear-gradient(135deg, #82af8c, #6a9878)", color: "#fff", border: "1.5px solid rgba(130,175,140,0.4)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", fontFamily: "var(--font-body)", letterSpacing: "0.01em", transition: "all 0.18s", boxShadow: "0 4px 18px rgba(106,152,120,0.32)" }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 24px rgba(106,152,120,0.4)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(106,152,120,0.32)"; }}
               >
                 <MicIcon/> start recording
               </button>
@@ -431,11 +431,11 @@ const TranscribeModal = ({
             {isRecording && (
               <button
                 onClick={stopAndUpload}
-                style={{ flex: 1, background: "linear-gradient(135deg, rgba(232,130,130,0.22), rgba(200,100,100,0.15))", color: "rgba(255,200,200,0.9)", border: "1.5px solid rgba(220,120,120,0.3)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", fontFamily: "var(--font-body)", letterSpacing: "0.01em", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", transition: "all 0.18s" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(232,130,130,0.32), rgba(200,100,100,0.25))"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(232,130,130,0.22), rgba(200,100,100,0.15))"; }}
+                style={{ flex: 1, background: "linear-gradient(135deg, #dc8c8c, #c86868)", color: "#fff", border: "1.5px solid rgba(220,120,120,0.4)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", fontFamily: "var(--font-body)", letterSpacing: "0.01em", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", transition: "all 0.18s", boxShadow: "0 4px 18px rgba(220,100,100,0.32)" }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 24px rgba(220,100,100,0.4)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(220,100,100,0.32)"; }}
               >
-                <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "rgba(255,200,200,0.9)", flexShrink: 0 }}/>
+                <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#fff", flexShrink: 0 }}/>
                 stop & save
               </button>
             )}
@@ -444,13 +444,13 @@ const TranscribeModal = ({
               <>
                 <button
                   onClick={() => { setPhase("idle"); setErrorMsg(""); setSecs(0); }}
-                  style={{ flex: 1, background: "linear-gradient(135deg, rgba(130,175,140,0.2), rgba(106,152,120,0.14))", color: "rgba(180,230,190,0.8)", border: "1.5px solid rgba(130,175,140,0.25)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", fontFamily: "var(--font-body)" }}
+                  style={{ flex: 1, background: "linear-gradient(135deg, #82af8c, #6a9878)", color: "#fff", border: "1.5px solid rgba(130,175,140,0.4)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", fontFamily: "var(--font-body)", boxShadow: "0 4px 18px rgba(106,152,120,0.32)" }}
                 >
                   try again
                 </button>
                 <button
                   onClick={onClose}
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.08)", color: "rgba(255,240,220,0.35)", borderRadius: "16px", padding: "14px 18px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "13px" }}
+                  style={{ background: "transparent", border: "1.5px solid rgba(200,185,168,0.4)", color: "#9a8880", borderRadius: "16px", padding: "14px 18px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "13px", fontWeight: "600" }}
                 >
                   close
                 </button>
@@ -460,12 +460,12 @@ const TranscribeModal = ({
 
           {/* Footer hint */}
           {isRecording && (
-            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "rgba(255,240,220,0.18)", fontFamily: "var(--font-body)" }}>
+            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "#c0b0a0", fontFamily: "var(--font-body)", fontWeight: "300" }}>
               tap stop when you're done speaking
             </p>
           )}
           {isIdle && (
-            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "rgba(255,240,220,0.18)", fontFamily: "var(--font-body)" }}>
+            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "#c0b0a0", fontFamily: "var(--font-body)", fontWeight: "300" }}>
               whisper-1 · your words stay private
             </p>
           )}
@@ -561,20 +561,20 @@ const NoteCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () =>
   if (note.isProcessing) {
     return (
       <div style={{
-        background: "linear-gradient(145deg, rgba(22,18,14,0.94), rgba(18,14,10,0.96))",
-        border: "1.5px solid rgba(255,240,220,0.07)",
+        background: "linear-gradient(145deg, #fef0f0, #fce8e8)",
+        border: "2px solid rgba(220,140,140,0.3)",
         borderRadius: "18px", padding: "18px 18px 16px",
         display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: "160px",
         animation: `floatIn 0.45s cubic-bezier(.22,.68,0,1.1) both`, animationDelay: `${index * 0.07}s`,
         position: "relative", overflow: "hidden",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+        boxShadow: "0 4px 20px rgba(232,160,160,0.15), 0 1px 4px rgba(220,140,140,0.08)",
       }}>
-        {/* Ambient red glow */}
-        <div style={{ position: "absolute", top: 0, right: 0, width: "80px", height: "80px", background: "radial-gradient(circle at top right, rgba(232,130,130,0.12) 0%, transparent 70%)", borderRadius: "0 18px 0 0", pointerEvents: "none" }}/>
-        {/* Blinking rec dot */}
+        {/* Ambient rose glow */}
+        <div style={{ position: "absolute", top: 0, right: 0, width: "80px", height: "80px", background: "radial-gradient(circle at top right, rgba(232,160,160,0.25) 0%, transparent 70%)", borderRadius: "0 18px 0 0", pointerEvents: "none" }}/>
+        {/* Blinking indicator */}
         <div style={{ position: "absolute", top: 14, right: 14, display: "flex", alignItems: "center", gap: "5px" }}>
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#e87070", animation: "recBlink 1.4s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
-          <span style={{ fontSize: "9px", color: "rgba(232,160,160,0.6)", fontFamily: "var(--font-body)", fontWeight: "700", letterSpacing: "0.1em" }}>transcribing</span>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#dc6464", animation: "recBlink 1.4s ease-in-out infinite", boxShadow: "0 0 8px rgba(220,100,100,0.4)" }}/>
+          <span style={{ fontSize: "9px", color: "#b05050", fontFamily: "var(--font-body)", fontWeight: "700", letterSpacing: "0.1em" }}>transcribing</span>
         </div>
         <div>
           {/* Mini waveform bars */}
@@ -582,22 +582,22 @@ const NoteCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () =>
             {Array.from({ length: 12 }).map((_, i) => (
               <div key={i} style={{
                 width: "2.5px", borderRadius: "2px",
-                background: "rgba(232,160,160,0.5)",
+                background: "#e8a0a0",
                 animation: `wave ${0.6 + (i % 5) * 0.14}s ease-in-out infinite alternate`,
                 animationDelay: `${(i * 0.07) % 0.5}s`,
                 minHeight: "3px", maxHeight: "18px",
               }}/>
             ))}
           </div>
-          <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", color: "rgba(255,240,220,0.45)", fontWeight: "500", lineHeight: "1.35", fontStyle: "italic" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", color: "#9a7870", fontWeight: "500", lineHeight: "1.35", fontStyle: "italic" }}>
             transcribing…
           </div>
-          <p style={{ marginTop: "6px", fontSize: "11.5px", color: "rgba(255,240,220,0.22)", lineHeight: "1.5", fontFamily: "var(--font-body)", fontWeight: "300" }}>
+          <p style={{ marginTop: "6px", fontSize: "11.5px", color: "#b09890", lineHeight: "1.5", fontFamily: "var(--font-body)", fontWeight: "300" }}>
             whisper is processing your recording
           </p>
         </div>
         <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
-          <span style={{ fontSize: "10.5px", color: "rgba(255,240,220,0.2)", fontFamily: "var(--font-body)" }}>{note.date}</span>
+          <span style={{ fontSize: "10.5px", color: "#c0b0a0", fontFamily: "var(--font-body)" }}>{note.date}</span>
         </div>
       </div>
     );
@@ -1235,13 +1235,13 @@ export default function SearchableHome() {
 
           {/* Processing banner — shown while any recent note is still being processed */}
           {rawNotes.some(n => !n.processed_content && new Date(n.created_at).getTime() > Date.now() - 5 * 60 * 1000) && (
-            <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px", background: "rgba(22,18,14,0.88)", backdropFilter: "blur(12px)", border: "1.5px solid rgba(232,160,160,0.18)", borderRadius: "16px", padding: "10px 16px", animation: "fadeIn 0.3s ease" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", flexShrink: 0, animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
-              <span style={{ fontFamily: "var(--font-body)", fontSize: "12.5px", color: "rgba(255,220,200,0.7)", fontWeight: "400" }}>
+            <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px", background: "rgba(255,255,255,0.88)", backdropFilter: "blur(12px)", border: "2px solid rgba(130,175,140,0.35)", borderRadius: "16px", padding: "10px 16px", animation: "fadeIn 0.3s ease", boxShadow: "0 4px 20px rgba(130,175,140,0.12)" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#7aab86", flexShrink: 0, animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 6px rgba(130,175,140,0.4)" }}/>
+              <span style={{ fontFamily: "var(--font-body)", fontSize: "12.5px", color: "#6a5a50", fontWeight: "500" }}>
                 clair is organising your note — the page will update automatically
               </span>
               <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
-                {[0,1,2].map(i => <div key={i} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "rgba(232,160,160,0.5)", animation: "bounce 1.2s ease-in-out infinite", animationDelay: `${i * 0.2}s` }}/>)}
+                {[0,1,2].map(i => <div key={i} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "#7aab86", animation: "bounce 1.2s ease-in-out infinite", animationDelay: `${i * 0.2}s` }}/>)}
               </div>
             </div>
           )}
