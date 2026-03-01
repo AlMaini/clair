@@ -3,7 +3,7 @@
 Runs after the Organizer, on a rate-limited Celery task (10/min).
 
 Given the processed note, it:
-  1. Extracts targeted search queries via Featherless LLM
+  1. Extracts targeted search queries via Gemini LLM
   2. Fetches resources appropriate to the note type:
        text / voice  →  YouTube (Data API v3) + Wikipedia
        link          →  DuckDuckGo web search for similar pages
@@ -62,7 +62,7 @@ async def research_note(note_id: str) -> None:
     # ── 2. Extract search queries via LLM ────────────────────────────────────
     try:
         qr = await ai_client.chat.completions.create(
-            model=settings.FEATHERLESS_MODEL,
+            model=settings.researcher_model,
             messages=[
                 {"role": "system", "content": _QUERY_SYSTEM_PROMPT},
                 {

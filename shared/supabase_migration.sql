@@ -60,3 +60,25 @@ create policy "Users can read resources on their notes"
   on resources for all using (
     note_id in (select id from notes where user_id = auth.uid())
   );
+
+-- pgvector similarity search used by the semantic search agent
+create or replace function match_notes(
+  query_embedding vector(1536),
+  match_threshold float,
+  match_count int,
+  p_user_id uuid
+)
+returns table (id uuid, similarity float)
+language sql stable
+as $$
+  select
+    id,
+    1 - (embedding <=> query_embedding) as similarity
+  from notes
+  where
+    user_id = p_user_id
+    and embedding is not null
+    and 1 - (embedding <=> query_embedding) > match_threshold
+  order by embedding <=> query_embedding
+  limit match_count;
+$$;

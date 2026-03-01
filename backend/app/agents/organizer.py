@@ -10,7 +10,7 @@ notes, it:
   4. Surfaces up to 3 related notes already in the system
   5. Optionally suggests category merges when duplicates are detected
 
-All LLM calls go through the Featherless OpenAI-compatible API.
+All LLM calls go through the Gemini OpenAI-compatible API.
 """
 
 import asyncio
@@ -105,9 +105,9 @@ async def organize_note(note_id: str) -> None:
         f"{json.dumps(existing_notes, default=str)}"
     )
 
-    # ── 5. Call Featherless ───────────────────────────────────────────────────
+    # ── 5. Call Gemini ────────────────────────────────────────────────────────
     response = await ai_client.chat.completions.create(
-        model=settings.FEATHERLESS_MODEL,
+        model=settings.organizer_model,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
