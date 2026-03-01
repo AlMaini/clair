@@ -27,6 +27,7 @@ interface DisplayNote {
   tailSide: "left" | "right";
   tags: string[];
   research: { title: string; url: string }[];
+  isProcessing: boolean;
 }
 
 function accentFromCategory(name: string | undefined, index: number): AccentKey {
@@ -39,14 +40,18 @@ function accentFromCategory(name: string | undefined, index: number): AccentKey 
 }
 
 function toDisplay(note: NoteResponse, index: number): DisplayNote {
+  // Voice note still being processed by Celery (no content yet)
+  const isProcessing = note.content_type === "voice" && !note.processed_content && !note.raw_content.trim();
   const content = note.processed_content || note.raw_content;
   const lines = content.split("\n");
   const firstLine = lines[0].trim();
-  // Use stored title if available, otherwise derive from first line
-  const title = note.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
-  const summary = lines.slice(1).join("\n").trim() || note.raw_content;
+  const title = isProcessing
+    ? "transcribing…"
+    : note.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
+  const summary = isProcessing
+    ? "your voice note is being processed by whisper"
+    : lines.slice(1).join("\n").trim() || note.raw_content;
   const date = new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  // Use stored color if available, otherwise derive from category
   const accent = (note.color as AccentKey) || accentFromCategory(note.category?.name, index);
   return {
     id: note.id,
@@ -57,6 +62,7 @@ function toDisplay(note: NoteResponse, index: number): DisplayNote {
     tailSide: index % 2 === 0 ? "left" : "right",
     tags: note.tags,
     research: note.resources.map(r => ({ title: r.title || r.url, url: r.url })),
+    isProcessing,
   };
 }
 
@@ -544,6 +550,52 @@ const NoteModal = ({
 const NoteCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () => void; index: number }) => {
   const acc = ACCENTS[note.accent];
   const [hovered, setHovered] = useState(false);
+
+  if (note.isProcessing) {
+    return (
+      <div style={{
+        background: "linear-gradient(145deg, rgba(22,18,14,0.94), rgba(18,14,10,0.96))",
+        border: "1.5px solid rgba(255,240,220,0.07)",
+        borderRadius: "18px", padding: "18px 18px 16px",
+        display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: "160px",
+        animation: `floatIn 0.45s cubic-bezier(.22,.68,0,1.1) both`, animationDelay: `${index * 0.07}s`,
+        position: "relative", overflow: "hidden",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+      }}>
+        {/* Ambient red glow */}
+        <div style={{ position: "absolute", top: 0, right: 0, width: "80px", height: "80px", background: "radial-gradient(circle at top right, rgba(232,130,130,0.12) 0%, transparent 70%)", borderRadius: "0 18px 0 0", pointerEvents: "none" }}/>
+        {/* Blinking rec dot */}
+        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", alignItems: "center", gap: "5px" }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#e87070", animation: "recBlink 1.4s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
+          <span style={{ fontSize: "9px", color: "rgba(232,160,160,0.6)", fontFamily: "var(--font-body)", fontWeight: "700", letterSpacing: "0.1em" }}>transcribing</span>
+        </div>
+        <div>
+          {/* Mini waveform bars */}
+          <div style={{ display: "flex", alignItems: "center", gap: "2.5px", marginBottom: "12px", height: "20px" }}>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} style={{
+                width: "2.5px", borderRadius: "2px",
+                background: "rgba(232,160,160,0.5)",
+                animation: `wave ${0.6 + (i % 5) * 0.14}s ease-in-out infinite alternate`,
+                animationDelay: `${(i * 0.07) % 0.5}s`,
+                minHeight: "3px", maxHeight: "18px",
+              }}/>
+            ))}
+          </div>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", color: "rgba(255,240,220,0.45)", fontWeight: "500", lineHeight: "1.35", fontStyle: "italic" }}>
+            transcribing…
+          </div>
+          <p style={{ marginTop: "6px", fontSize: "11.5px", color: "rgba(255,240,220,0.22)", lineHeight: "1.5", fontFamily: "var(--font-body)", fontWeight: "300" }}>
+            whisper is processing your recording
+          </p>
+        </div>
+        <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: "10.5px", color: "rgba(255,240,220,0.2)", fontFamily: "var(--font-body)" }}>{note.date}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
       background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "18px",
@@ -987,11 +1039,27 @@ export default function SearchableHome() {
   const { data: rawNotes = [], isLoading } = useQuery({
     queryKey: ["notes"],
     queryFn: () => api.get<NoteResponse[]>("/api/notes/?limit=50"),
+    // Poll every 4 s while any voice note is still being transcribed/organised
+    refetchInterval: (query) => {
+      const data = query.state.data as NoteResponse[] | undefined;
+      const hasProcessing = (data ?? []).some(
+        n => n.content_type === "voice" && !n.processed_content && !n.raw_content.trim()
+      );
+      return hasProcessing ? 4000 : false;
+    },
   });
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
     queryFn: () => api.get<Category[]>("/api/categories/"),
+    // Also poll categories — organizer may create a new one while processing
+    refetchInterval: (query) => {
+      const notes = rawNotes;
+      const hasProcessing = notes.some(
+        n => n.content_type === "voice" && !n.processed_content && !n.raw_content.trim()
+      );
+      return hasProcessing ? 5000 : false;
+    },
   });
 
   const notes: DisplayNote[] = rawNotes.map((n, i) => toDisplay(n, i));
@@ -1157,6 +1225,19 @@ export default function SearchableHome() {
             </p>
           </div>
 
+          {/* Processing banner — shown while voice notes are transcribing */}
+          {rawNotes.some(n => n.content_type === "voice" && !n.processed_content && !n.raw_content.trim()) && (
+            <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px", background: "rgba(22,18,14,0.88)", backdropFilter: "blur(12px)", border: "1.5px solid rgba(232,160,160,0.18)", borderRadius: "16px", padding: "10px 16px", animation: "fadeIn 0.3s ease" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", flexShrink: 0, animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
+              <span style={{ fontFamily: "var(--font-body)", fontSize: "12.5px", color: "rgba(255,220,200,0.7)", fontWeight: "400" }}>
+                whisper is transcribing your voice note — the page will update automatically
+              </span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+                {[0,1,2].map(i => <div key={i} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "rgba(232,160,160,0.5)", animation: "bounce 1.2s ease-in-out infinite", animationDelay: `${i * 0.2}s` }}/>)}
+              </div>
+            </div>
+          )}
+
           {/* Category tabs */}
           {categories.length > 0 && (
             <CategoryTabs
@@ -1230,10 +1311,10 @@ export default function SearchableHome() {
       {showTranscribe && (
         <TranscribeModal
           onClose={() => setShowTranscribe(false)}
-          onCreated={(noteId) => {
+          onCreated={() => {
             setShowTranscribe(false);
             queryClient.invalidateQueries({ queryKey: ["notes"] });
-            navigate(`/note/${noteId}`);
+            // Stay on home — polling will auto-refresh as Whisper + organizer finish
           }}
         />
       )}
