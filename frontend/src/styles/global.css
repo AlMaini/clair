@@ -1,0 +1,44 @@
+/* Global styles for the app */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Nunito:wght@300;400;600;700&display=swap');
+:root {
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'Nunito', sans-serif;
+  --bg: #faf6f0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); font-family: var(--font-body); min-height: 100vh; }
+input:focus { outline: none; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #e0d0c0; border-radius: 3px; }
+
+@keyframes wave { from { height: 5px; } to { height: 32px; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes popBubble {
+  0%   { opacity: 0; transform: scale(0.8) translateY(20px); }
+  70%  { transform: scale(1.03) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes floatIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes riseUp {
+  0%   { transform: translateY(0) scale(1);    opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateY(-110vh) scale(0.6); opacity: 0; }
+}
+@keyframes heroDrift {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0%, 100% { box-shadow: 0 8px 32px rgba(130,175,140,0.18), 0 0 0 8px rgba(130,175,140,0.07); }
+  50%       { box-shadow: 0 8px 40px rgba(130,175,140,0.3),  0 0 0 10px rgba(130,175,140,0.1); }
+}
+@keyframes logoBounce {
+  0%, 100% { transform: translateY(0); }
+  40%      { transform: translateY(-6px); }
+  60%      { transform: translateY(-3px); }
+}
