@@ -1,15 +1,21 @@
 import { Routes, Route } from 'react-router-dom'
+import { AuthProvider } from './contexts/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import Landing from './pages/Landing'
 import NotePage from './pages/NotePage'
 import Search from './pages/Search'
+import Auth from './pages/Auth'
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/note/:id" element={<NotePage />} />
-      <Route path="/search" element={<Search />} />
-    </Routes>
+    <AuthProvider>
+      <Routes>
+        <Route path="/auth" element={<Auth />} />
+        <Route path="/" element={<ProtectedRoute><Landing /></ProtectedRoute>} />
+        <Route path="/note/:id" element={<ProtectedRoute><NotePage /></ProtectedRoute>} />
+        <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
+      </Routes>
+    </AuthProvider>
   )
 }
 
