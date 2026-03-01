@@ -131,6 +131,7 @@ async def organize_note(note_id: str) -> None:
         .update(
             {
                 "processed_content": result.get("summary"),
+                "title": result.get("title"),
                 "tags": result.get("tags") or [],
                 "category_id": category_id,
                 "related_note_ids": related_note_ids,
