@@ -12,7 +12,10 @@ class NoteCreate(BaseModel):
 
 class NoteUpdate(BaseModel):
     content: str | None = None
+    processed_content: str | None = None
+    title: str | None = None
     tags: list[str] | None = None
+    color: str | None = None
     source_url: str | None = None
 
 
@@ -28,6 +31,8 @@ class NoteResponse(BaseModel):
     related_note_ids: list[str]
     created_at: datetime
     updated_at: datetime | None = None
+    title: str | None = None
+    color: str | None = None
 
 
 class SearchQuery(BaseModel):

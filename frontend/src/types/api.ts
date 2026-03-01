@@ -23,6 +23,8 @@ export interface NoteResponse {
   related_note_ids: string[]
   created_at: string
   updated_at?: string
+  title: string | null
+  color: string | null
 }
 
 export interface SearchResult {

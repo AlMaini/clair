@@ -1,9 +1,9 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import type { NoteResponse } from "../types/api";
+import type { NoteResponse, Category } from "../types/api";
 import "../styles/global.css";
 
 // ── Accent palettes ────────────────────────────────────────────────────────────
@@ -27,6 +27,7 @@ interface DisplayNote {
   tailSide: "left" | "right";
   tags: string[];
   research: { title: string; url: string }[];
+  isProcessing: boolean;
 }
 
 function accentFromCategory(name: string | undefined, index: number): AccentKey {
@@ -39,13 +40,19 @@ function accentFromCategory(name: string | undefined, index: number): AccentKey 
 }
 
 function toDisplay(note: NoteResponse, index: number): DisplayNote {
+  // Voice note still being processed by Celery (no content yet)
+  const isProcessing = note.content_type === "voice" && !note.processed_content && !note.raw_content.trim();
   const content = note.processed_content || note.raw_content;
   const lines = content.split("\n");
   const firstLine = lines[0].trim();
-  const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
-  const summary = lines.slice(1).join("\n").trim() || note.raw_content;
+  const title = isProcessing
+    ? "transcribing…"
+    : note.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
+  const summary = isProcessing
+    ? "your voice note is being processed by whisper"
+    : note.processed_content || note.raw_content;
   const date = new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const accent = accentFromCategory(note.category?.name, index);
+  const accent = (note.color as AccentKey) || accentFromCategory(note.category?.name, index);
   return {
     id: note.id,
     title,
@@ -55,6 +62,7 @@ function toDisplay(note: NoteResponse, index: number): DisplayNote {
     tailSide: index % 2 === 0 ? "left" : "right",
     tags: note.tags,
     research: note.resources.map(r => ({ title: r.title || r.url, url: r.url })),
+    isProcessing,
   };
 }
 
@@ -138,17 +146,377 @@ const PlusIcon = () => (
     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
   </svg>
 );
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+  </svg>
+);
+const MicIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+  </svg>
+);
+const PencilIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+);
+const LinkIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+  </svg>
+);
+const ImageIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+    <circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>
+  </svg>
+);
+const EditIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+);
+
+// ── TranscribeModal ────────────────────────────────────────────────────────────
+// Records real audio via MediaRecorder → uploads to backend → Whisper transcribes
+const TranscribeModal = ({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (noteId: string) => void;
+}) => {
+  type Phase = "idle" | "requesting" | "recording" | "uploading" | "error";
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [secs, setSecs] = useState(0);
+  const [bars, setBars] = useState<number[]>(Array(28).fill(4));
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const recorderRef  = useRef<MediaRecorder | null>(null);
+  const chunksRef    = useRef<Blob[]>([]);
+  const streamRef    = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    cancelAnimationFrame(animFrameRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+  }, []);
+
+  const startRecording = async () => {
+    setPhase("requesting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      // Web Audio analyser for real waveform
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      src.connect(analyser);
+      const dataArr = new Uint8Array(analyser.frequencyBinCount);
+      const animate = () => {
+        analyser.getByteFrequencyData(dataArr);
+        setBars(Array.from({ length: 28 }, (_, i) => {
+          const idx = Math.floor(i * dataArr.length / 28);
+          return Math.max(4, (dataArr[idx] / 255) * 52);
+        }));
+        animFrameRef.current = requestAnimationFrame(animate);
+      };
+      animFrameRef.current = requestAnimationFrame(animate);
+
+      // MediaRecorder
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/ogg";
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.start(100);
+      recorderRef.current = recorder;
+
+      // Timer
+      setSecs(0);
+      timerRef.current = setInterval(() => setSecs(s => s + 1), 1000);
+      setPhase("recording");
+    } catch {
+      setPhase("error");
+      setErrorMsg("Microphone access denied. Please allow access in your browser settings and try again.");
+    }
+  };
+
+  const stopAndUpload = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    cancelAnimationFrame(animFrameRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    setPhase("uploading");
+
+    recorder.onstop = async () => {
+      const mimeType = recorder.mimeType || "audio/webm";
+      const ext = mimeType.includes("ogg") ? "ogg" : "webm";
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const file = new File([blob], `voice_note.${ext}`, { type: mimeType });
+
+      const form = new FormData();
+      form.append("content_type", "voice");
+      form.append("content", "");
+      form.append("file", file, file.name);
+
+      try {
+        const data = await api.post<{ id: string }>("/api/notes/", form);
+        onCreated(data.id);
+      } catch {
+        setPhase("error");
+        setErrorMsg("Upload failed — please check your connection and try again.");
+      }
+    };
+    recorder.stop();
+  };
+
+  const fmt = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  // Shared label/subtitle text
+  const titles: Record<Phase, string> = {
+    idle:      "✦ new voice note",
+    requesting: "requesting mic…",
+    recording: "listening",
+    uploading: "sending to clair…",
+    error:     "something went wrong",
+  };
+  const subtitles: Record<Phase, string> = {
+    idle:      "speak freely — whisper will capture every word",
+    requesting: "allowing microphone access…",
+    recording: fmt(secs),
+    uploading: "your thought is being transcribed",
+    error:     errorMsg,
+  };
+
+  const isRecording = phase === "recording";
+  const isIdle      = phase === "idle";
+  const isUploading = phase === "uploading";
+  const isError     = phase === "error";
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(18,14,10,0.72)", backdropFilter: "blur(20px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={isRecording ? undefined : onClose}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ width: "min(420px,94vw)", position: "relative", animation: "popBubble 0.35s cubic-bezier(.22,.68,0,1.3)" }}
+      >
+        {/* Card */}
+        <div style={{
+          background: "linear-gradient(160deg, #1e1812 0%, #16120e 100%)",
+          border: "1.5px solid rgba(255,240,220,0.08)",
+          borderRadius: "28px",
+          padding: "36px 32px 28px",
+          boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)",
+          overflow: "hidden",
+          position: "relative",
+        }}>
+          {/* Subtle ambient glow */}
+          <div style={{ position: "absolute", top: "-60px", left: "50%", transform: "translateX(-50%)", width: "200px", height: "200px", background: isRecording ? "radial-gradient(circle, rgba(232,160,160,0.12) 0%, transparent 70%)" : "radial-gradient(circle, rgba(130,175,140,0.1) 0%, transparent 70%)", pointerEvents: "none", transition: "background 0.6s ease" }}/>
+
+          {/* Close */}
+          {!isRecording && !isUploading && (
+            <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.07)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.4)" }}>
+              <CloseIcon/>
+            </button>
+          )}
+
+          {/* Title */}
+          <div style={{ marginBottom: "28px" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: "rgba(255,248,238,0.92)", fontWeight: "600", marginBottom: "6px", letterSpacing: "-0.01em" }}>
+              {titles[phase]}
+            </div>
+            <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: isError ? "#e8a0a0" : "rgba(255,240,220,0.38)", fontWeight: "300", letterSpacing: "0.02em", transition: "color 0.3s" }}>
+              {subtitles[phase]}
+            </div>
+          </div>
+
+          {/* Central visualisation area */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28px", marginBottom: "28px" }}>
+
+            {/* Waveform / mic orb */}
+            {isIdle && (
+              <div style={{ position: "relative", width: "100px", height: "100px" }}>
+                {/* Pulse rings */}
+                <div style={{ position: "absolute", inset: "-16px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.2)", animation: "pulseRing 2.4s ease-out infinite" }}/>
+                <div style={{ position: "absolute", inset: "-8px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.15)", animation: "pulseRing 2.4s ease-out infinite 0.6s" }}/>
+                <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(130,175,140,0.25), rgba(106,152,120,0.15))", border: "1.5px solid rgba(130,175,140,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(130,175,140,0.9)", boxShadow: "0 0 32px rgba(130,175,140,0.12), inset 0 1px 0 rgba(255,255,255,0.05)" }}>
+                  <MicIcon/>
+                </div>
+              </div>
+            )}
+
+            {(phase === "requesting") && (
+              <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(200,185,165,0.12), rgba(180,165,145,0.08))", border: "1.5px solid rgba(200,185,165,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(200,185,165,0.5)" }}>
+                <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(200,185,165,0.3)", borderTopColor: "rgba(200,185,165,0.7)", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
+              </div>
+            )}
+
+            {isRecording && (
+              <>
+                {/* Live waveform bars */}
+                <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "60px" }}>
+                  {bars.map((h, i) => (
+                    <div key={i} style={{
+                      width: "3px", borderRadius: "2px",
+                      height: `${h}px`,
+                      background: `linear-gradient(to top, rgba(232,160,160,0.9), rgba(200,130,130,0.5))`,
+                      transition: "height 0.08s ease",
+                      boxShadow: h > 20 ? "0 0 6px rgba(232,160,160,0.4)" : "none",
+                    }}/>
+                  ))}
+                </div>
+                {/* Rec indicator */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 8px rgba(232,112,112,0.6)" }}/>
+                  <span style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "rgba(255,240,220,0.5)", letterSpacing: "0.12em", fontWeight: "600" }}>REC</span>
+                </div>
+              </>
+            )}
+
+            {isUploading && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px" }}>
+                <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(130,175,140,0.15), rgba(106,152,120,0.08))", border: "1.5px solid rgba(130,175,140,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(130,175,140,0.25)", borderTopColor: "rgba(130,175,140,0.8)", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
+                </div>
+                <div style={{ display: "flex", gap: "5px" }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{ width: "5px", height: "5px", borderRadius: "50%", background: "rgba(130,175,140,0.6)", animation: `bounce 1.2s ease-in-out infinite`, animationDelay: `${i * 0.2}s` }}/>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isError && (
+              <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "rgba(220,100,100,0.1)", border: "1.5px solid rgba(220,100,100,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>
+                ×
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", gap: "10px" }}>
+            {isIdle && (
+              <button
+                onClick={startRecording}
+                style={{ flex: 1, background: "linear-gradient(135deg, rgba(130,175,140,0.28), rgba(106,152,120,0.2))", color: "rgba(180,230,190,0.9)", border: "1.5px solid rgba(130,175,140,0.3)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", fontFamily: "var(--font-body)", letterSpacing: "0.01em", transition: "all 0.18s", boxShadow: "0 2px 16px rgba(130,175,140,0.08)" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(130,175,140,0.38), rgba(106,152,120,0.28))"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(130,175,140,0.18)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(130,175,140,0.28), rgba(106,152,120,0.2))"; e.currentTarget.style.boxShadow = "0 2px 16px rgba(130,175,140,0.08)"; }}
+              >
+                <MicIcon/> start recording
+              </button>
+            )}
+
+            {isRecording && (
+              <button
+                onClick={stopAndUpload}
+                style={{ flex: 1, background: "linear-gradient(135deg, rgba(232,130,130,0.22), rgba(200,100,100,0.15))", color: "rgba(255,200,200,0.9)", border: "1.5px solid rgba(220,120,120,0.3)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", fontFamily: "var(--font-body)", letterSpacing: "0.01em", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", transition: "all 0.18s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(232,130,130,0.32), rgba(200,100,100,0.25))"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(232,130,130,0.22), rgba(200,100,100,0.15))"; }}
+              >
+                <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "rgba(255,200,200,0.9)", flexShrink: 0 }}/>
+                stop & save
+              </button>
+            )}
+
+            {isError && (
+              <>
+                <button
+                  onClick={() => { setPhase("idle"); setErrorMsg(""); setSecs(0); }}
+                  style={{ flex: 1, background: "linear-gradient(135deg, rgba(130,175,140,0.2), rgba(106,152,120,0.14))", color: "rgba(180,230,190,0.8)", border: "1.5px solid rgba(130,175,140,0.25)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", fontFamily: "var(--font-body)" }}
+                >
+                  try again
+                </button>
+                <button
+                  onClick={onClose}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.08)", color: "rgba(255,240,220,0.35)", borderRadius: "16px", padding: "14px 18px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "13px" }}
+                >
+                  close
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Footer hint */}
+          {isRecording && (
+            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "rgba(255,240,220,0.18)", fontFamily: "var(--font-body)" }}>
+              tap stop when you're done speaking
+            </p>
+          )}
+          {isIdle && (
+            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "rgba(255,240,220,0.18)", fontFamily: "var(--font-body)" }}>
+              whisper-1 · your words stay private
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ── Note Detail Modal ──────────────────────────────────────────────────────────
-const NoteModal = ({ note, onClose }: { note: DisplayNote; onClose: () => void }) => {
+const NoteModal = ({
+  note,
+  onClose,
+  onDelete,
+  onEdit,
+}: {
+  note: DisplayNote;
+  onClose: () => void;
+  onDelete?: () => void;
+  onEdit?: () => void;
+}) => {
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const acc = ACCENTS[note.accent];
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(12px)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ position: "relative", width: "min(580px, 94vw)", animation: "popBubble 0.38s cubic-bezier(.22,.68,0,1.3)" }} onClick={e => e.stopPropagation()}>
         <div style={{ background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "32px", padding: "36px 36px 30px", boxShadow: `0 8px 40px ${acc.glow}, 0 2px 16px rgba(160,140,120,0.1)`, position: "relative" }}>
-          <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
-            <CloseIcon/>
-          </button>
+          {/* Top-right buttons */}
+          <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: "6px", alignItems: "center" }}>
+            {onDelete && !deleteConfirm && (
+              <button onClick={() => setDeleteConfirm(true)} style={{ background: "rgba(220,100,100,0.08)", border: "1.5px solid rgba(220,100,100,0.2)", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#b05050" }}>
+                <TrashIcon/>
+              </button>
+            )}
+            {deleteConfirm && (
+              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                <span style={{ fontSize: "11px", color: "#b05050", fontFamily: "var(--font-body)" }}>delete?</span>
+                <button onClick={() => { onDelete?.(); }} style={{ padding: "4px 8px", background: "#dc6464", border: "none", borderRadius: "8px", fontSize: "11px", color: "#fff", cursor: "pointer", fontFamily: "var(--font-body)", fontWeight: "700" }}>yes</button>
+                <button onClick={() => setDeleteConfirm(false)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "8px", fontSize: "11px", color: "#7a6858", cursor: "pointer", fontFamily: "var(--font-body)" }}>no</button>
+              </div>
+            )}
+            {onEdit && (
+              <button onClick={onEdit} style={{ background: acc.tagBg, border: `1.5px solid ${acc.border}`, borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: acc.tagText }} title="Edit note">
+                <PencilIcon/>
+              </button>
+            )}
+            <button onClick={onClose} style={{ background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
+              <CloseIcon/>
+            </button>
+          </div>
+
           <div style={{ fontSize: "11.5px", color: "#b0a090", fontFamily: "var(--font-body)", marginBottom: "7px", letterSpacing: "0.04em" }}>{note.date}</div>
           <h2 style={{ fontFamily: "var(--font-display)", fontSize: "26px", color: "#3a3028", marginBottom: "14px", lineHeight: "1.25", fontWeight: "600", paddingRight: "30px" }}>{note.title}</h2>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "18px" }}>
@@ -189,6 +557,52 @@ const NoteModal = ({ note, onClose }: { note: DisplayNote; onClose: () => void }
 const NoteCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () => void; index: number }) => {
   const acc = ACCENTS[note.accent];
   const [hovered, setHovered] = useState(false);
+
+  if (note.isProcessing) {
+    return (
+      <div style={{
+        background: "linear-gradient(145deg, rgba(22,18,14,0.94), rgba(18,14,10,0.96))",
+        border: "1.5px solid rgba(255,240,220,0.07)",
+        borderRadius: "18px", padding: "18px 18px 16px",
+        display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: "160px",
+        animation: `floatIn 0.45s cubic-bezier(.22,.68,0,1.1) both`, animationDelay: `${index * 0.07}s`,
+        position: "relative", overflow: "hidden",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+      }}>
+        {/* Ambient red glow */}
+        <div style={{ position: "absolute", top: 0, right: 0, width: "80px", height: "80px", background: "radial-gradient(circle at top right, rgba(232,130,130,0.12) 0%, transparent 70%)", borderRadius: "0 18px 0 0", pointerEvents: "none" }}/>
+        {/* Blinking rec dot */}
+        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", alignItems: "center", gap: "5px" }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#e87070", animation: "recBlink 1.4s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
+          <span style={{ fontSize: "9px", color: "rgba(232,160,160,0.6)", fontFamily: "var(--font-body)", fontWeight: "700", letterSpacing: "0.1em" }}>transcribing</span>
+        </div>
+        <div>
+          {/* Mini waveform bars */}
+          <div style={{ display: "flex", alignItems: "center", gap: "2.5px", marginBottom: "12px", height: "20px" }}>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} style={{
+                width: "2.5px", borderRadius: "2px",
+                background: "rgba(232,160,160,0.5)",
+                animation: `wave ${0.6 + (i % 5) * 0.14}s ease-in-out infinite alternate`,
+                animationDelay: `${(i * 0.07) % 0.5}s`,
+                minHeight: "3px", maxHeight: "18px",
+              }}/>
+            ))}
+          </div>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: "14px", color: "rgba(255,240,220,0.45)", fontWeight: "500", lineHeight: "1.35", fontStyle: "italic" }}>
+            transcribing…
+          </div>
+          <p style={{ marginTop: "6px", fontSize: "11.5px", color: "rgba(255,240,220,0.22)", lineHeight: "1.5", fontFamily: "var(--font-body)", fontWeight: "300" }}>
+            whisper is processing your recording
+          </p>
+        </div>
+        <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: "10.5px", color: "rgba(255,240,220,0.2)", fontFamily: "var(--font-body)" }}>{note.date}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{
       background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "18px",
@@ -274,6 +688,257 @@ const FolderCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () 
         </div>
       </div>
     </div>
+  );
+};
+
+// ── Category Tabs ──────────────────────────────────────────────────────────────
+const CategoryTabs = ({
+  categories,
+  activeCategory,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  categories: Category[];
+  activeCategory: string | null;
+  onSelect: (id: string | null) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [hoveringId, setHoveringId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = (cat: Category) => {
+    setEditingId(cat.id);
+    setEditValue(cat.name);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const commitEdit = (id: string) => {
+    if (editValue.trim() && editValue.trim() !== categories.find(c => c.id === id)?.name) {
+      onRename(id, editValue.trim());
+    }
+    setEditingId(null);
+  };
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (window.confirm("Delete this category? Notes will not be deleted.")) {
+      onDelete(id);
+    }
+  };
+
+  const pillBase: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: "4px",
+    padding: "5px 13px", borderRadius: "20px",
+    fontFamily: "var(--font-body)", fontSize: "12.5px", fontWeight: "600",
+    cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+    transition: "all 0.15s", border: "1.5px solid transparent",
+  };
+
+  return (
+    <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px" }}>
+      <div style={{
+        display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px",
+        scrollbarWidth: "none",
+      }}>
+        {/* All tab */}
+        <button
+          onClick={() => onSelect(null)}
+          style={{
+            ...pillBase,
+            background: activeCategory === null ? "rgba(130,175,140,0.18)" : "rgba(255,255,255,0.7)",
+            border: `1.5px solid ${activeCategory === null ? "rgba(130,175,140,0.5)" : "rgba(200,185,168,0.3)"}`,
+            color: activeCategory === null ? "#3d7a50" : "#8a7a6a",
+          }}
+        >
+          All
+        </button>
+
+        {categories.map(cat => (
+          <div
+            key={cat.id}
+            style={{ position: "relative", flexShrink: 0 }}
+            onMouseEnter={() => setHoveringId(cat.id)}
+            onMouseLeave={() => setHoveringId(null)}
+          >
+            {editingId === cat.id ? (
+              <input
+                ref={inputRef}
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(cat.id)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") commitEdit(cat.id);
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                style={{
+                  padding: "5px 10px", borderRadius: "20px",
+                  fontFamily: "var(--font-body)", fontSize: "12.5px", fontWeight: "600",
+                  border: "1.5px solid rgba(130,175,140,0.5)",
+                  outline: "none", background: "rgba(255,255,255,0.9)",
+                  color: "#3d7a50", width: `${Math.max(editValue.length * 8 + 24, 80)}px`,
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => onSelect(cat.id)}
+                onDoubleClick={() => startEdit(cat)}
+                style={{
+                  ...pillBase,
+                  background: activeCategory === cat.id ? "rgba(130,175,140,0.18)" : "rgba(255,255,255,0.7)",
+                  border: `1.5px solid ${activeCategory === cat.id ? "rgba(130,175,140,0.5)" : "rgba(200,185,168,0.3)"}`,
+                  color: activeCategory === cat.id ? "#3d7a50" : "#8a7a6a",
+                  paddingRight: hoveringId === cat.id ? "6px" : "13px",
+                }}
+              >
+                {cat.name}
+                {hoveringId === cat.id && (
+                  <span
+                    onClick={e => handleDelete(e, cat.id)}
+                    style={{ display: "flex", alignItems: "center", marginLeft: "2px", color: "#b05050", opacity: 0.7, cursor: "pointer" }}
+                    title="Delete category"
+                  >
+                    <CloseIcon/>
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── FAB Palette ────────────────────────────────────────────────────────────────
+const FABPalette = ({
+  onNewText,
+  onNewVoice,
+}: {
+  onNewText: () => void;
+  onNewVoice: () => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [tooltip, setTooltip] = useState<string | null>(null);
+  const fabRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click or Escape
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const handleClick = (e: MouseEvent) => {
+      if (fabRef.current && !fabRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    document.addEventListener("mousedown", handleClick);
+    return () => { document.removeEventListener("keydown", handleKey); document.removeEventListener("mousedown", handleClick); };
+  }, [open]);
+
+  const miniBtn = (icon: React.ReactNode, label: string, onClick: () => void, color = "#3d6b4a") => (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "flex-end" }}>
+      {open && (
+        <span style={{
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.3)", borderRadius: "8px",
+          padding: "4px 10px", fontSize: "11.5px", fontFamily: "var(--font-body)",
+          color: "#7a6a60", fontWeight: "600", whiteSpace: "nowrap",
+          animation: "fadeIn 0.15s ease",
+          boxShadow: "0 2px 8px rgba(140,120,100,0.08)",
+        }}>{label}</span>
+      )}
+      <button
+        onClick={onClick}
+        style={{
+          width: 42, height: 42, borderRadius: "50%",
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.3)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", color,
+          boxShadow: "0 2px 12px rgba(140,120,100,0.12)",
+          transition: "transform 0.15s, box-shadow 0.15s",
+          animation: "popUp 0.2s cubic-bezier(.22,.68,0,1.3)",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(140,120,100,0.2)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(140,120,100,0.12)"; }}
+      >
+        {icon}
+      </button>
+    </div>
+  );
+
+  const placeholderBtn = (icon: React.ReactNode, label: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "flex-end" }}>
+      {open && tooltip === label && (
+        <span style={{
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.3)", borderRadius: "8px",
+          padding: "4px 10px", fontSize: "11.5px", fontFamily: "var(--font-body)",
+          color: "#b0a090", fontWeight: "600", whiteSpace: "nowrap",
+          animation: "fadeIn 0.15s ease",
+          boxShadow: "0 2px 8px rgba(140,120,100,0.08)",
+        }}>coming soon</span>
+      )}
+      <button
+        onClick={() => setTooltip(tooltip === label ? null : label)}
+        style={{
+          width: 42, height: 42, borderRadius: "50%",
+          background: "rgba(255,255,255,0.7)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.22)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", color: "#c0b0a0",
+          boxShadow: "0 2px 8px rgba(140,120,100,0.07)",
+          animation: "popUp 0.2s cubic-bezier(.22,.68,0,1.3)",
+        }}
+      >
+        {icon}
+      </button>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 9, background: "rgba(250,246,240,0.4)", backdropFilter: "blur(2px)" }}
+        />
+      )}
+
+      <div ref={fabRef} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "10px" }}>
+        {/* Palette items (shown when open) */}
+        {open && (
+          <>
+            {placeholderBtn(<ImageIcon/>, "Image")}
+            {placeholderBtn(<LinkIcon/>, "Link")}
+            {miniBtn(<MicIcon/>, "Voice note", () => { setOpen(false); onNewVoice(); }, "#5a6a9a")}
+            {miniBtn(<PencilIcon/>, "Text note", () => { setOpen(false); onNewText(); })}
+          </>
+        )}
+
+        {/* Main FAB */}
+        <button
+          onClick={() => setOpen(v => !v)}
+          style={{
+            width: 52, height: 52, borderRadius: "50%",
+            background: open ? "linear-gradient(145deg, #c8d8ca, #b0c8b8)" : "linear-gradient(145deg, #e8f2ea, #d2e8da)",
+            border: "2px solid rgba(130,175,140,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", color: "#3d6b4a",
+            boxShadow: "0 4px 20px rgba(130,175,140,0.25)",
+            transition: "transform 0.22s, box-shadow 0.22s, background 0.2s",
+            transform: open ? "rotate(45deg)" : "rotate(0deg)",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 6px 28px rgba(130,175,140,0.35)"; }}
+          onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 4px 20px rgba(130,175,140,0.25)"; }}
+        >
+          <PlusIcon/>
+        </button>
+      </div>
+    </>
   );
 };
 
@@ -370,22 +1035,49 @@ const ResultsPage = ({ query, results, isSearching, onBack, onSelectNote, onQuer
 export default function SearchableHome() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"home" | "results">("home");
   const [searchResults, setSearchResults] = useState<DisplayNote[]>([]);
   const [selected, setSelected] = useState<DisplayNote | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [showTranscribe, setShowTranscribe] = useState(false);
 
   const { data: rawNotes = [], isLoading } = useQuery({
     queryKey: ["notes"],
     queryFn: () => api.get<NoteResponse[]>("/api/notes/?limit=50"),
+    // Poll every 4 s while any recently-created note is still being processed
+    refetchInterval: (query) => {
+      const data = query.state.data as NoteResponse[] | undefined;
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      const hasProcessing = (data ?? []).some(
+        n => !n.processed_content && new Date(n.created_at).getTime() > fiveMinutesAgo
+      );
+      return hasProcessing ? 4000 : false;
+    },
+  });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.get<Category[]>("/api/categories/"),
+    // Also poll categories — organizer may create a new one while processing
+    refetchInterval: () => {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      const hasProcessing = rawNotes.some(
+        n => !n.processed_content && new Date(n.created_at).getTime() > fiveMinutesAgo
+      );
+      return hasProcessing ? 4000 : false;
+    },
   });
 
   const notes: DisplayNote[] = rawNotes.map((n, i) => toDisplay(n, i));
 
-  // Live filter on home page
+  // Live filter on home page (search + category)
   const liveFiltered = notes.filter(n => {
     const q = query.toLowerCase();
-    return !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.tags.some(t => t.includes(q));
+    const matchesSearch = !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.tags.some(t => t.includes(q));
+    const matchesCategory = activeCategory === null || rawNotes.find(rn => rn.id === n.id)?.category?.id === activeCategory;
+    return matchesSearch && matchesCategory;
   });
 
   const searchMutation = useMutation({
@@ -395,6 +1087,31 @@ export default function SearchableHome() {
       const results = (data.notes ?? []).map((n, i) => toDisplay(n, i));
       setSearchResults(results);
       setView("results");
+    },
+  });
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: (noteId: string) => api.delete(`/api/notes/${noteId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      setSelected(null);
+    },
+  });
+
+  const renameCategoryMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api.patch<Category>(`/api/categories/${id}`, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/categories/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      setActiveCategory(null);
     },
   });
 
@@ -417,13 +1134,15 @@ export default function SearchableHome() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg); font-family: var(--font-body); min-height: 100vh; }
         input:focus { outline: none; }
-        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #e0d0c0; border-radius: 3px; }
 
         @keyframes wave { from { height: 5px; } to { height: 32px; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes popBubble { 0% { opacity: 0; transform: scale(0.8) translateY(20px); } 70% { transform: scale(1.03) translateY(-4px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes popUp { 0% { opacity: 0; transform: scale(0.6) translateY(8px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes floatIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes folderSlideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pageSlideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
@@ -431,6 +1150,9 @@ export default function SearchableHome() {
         @keyframes heroDrift { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0%, 100% { box-shadow: 0 8px 32px rgba(130,175,140,0.18), 0 0 0 8px rgba(130,175,140,0.07); } 50% { box-shadow: 0 8px 40px rgba(130,175,140,0.3), 0 0 0 10px rgba(130,175,140,0.1); } }
         @keyframes logoBounce { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } 60% { transform: translateY(-3px); } }
+        @keyframes pulseRing { 0% { transform: scale(0.9); opacity: 0.7; } 100% { transform: scale(1.5); opacity: 0; } }
+        @keyframes recBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
       `}</style>
 
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(154,160,216,0.1) 0%, transparent 55%), radial-gradient(ellipse 55% 40% at 88% 75%, rgba(130,175,140,0.09) 0%, transparent 50%), radial-gradient(ellipse 45% 38% at 12% 68%, rgba(232,160,176,0.07) 0%, transparent 50%)" }}/>
@@ -478,7 +1200,7 @@ export default function SearchableHome() {
           </div>
 
           {/* Search */}
-          <div style={{ width: "100%", maxWidth: "780px", marginBottom: "32px" }}>
+          <div style={{ width: "100%", maxWidth: "780px", marginBottom: "16px" }}>
             <div style={{ display: "flex", gap: "10px" }}>
               <div style={{
                 flex: 1, display: "flex", alignItems: "center", gap: "11px",
@@ -511,13 +1233,39 @@ export default function SearchableHome() {
             </p>
           </div>
 
+          {/* Processing banner — shown while any recent note is still being processed */}
+          {rawNotes.some(n => !n.processed_content && new Date(n.created_at).getTime() > Date.now() - 5 * 60 * 1000) && (
+            <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px", background: "rgba(22,18,14,0.88)", backdropFilter: "blur(12px)", border: "1.5px solid rgba(232,160,160,0.18)", borderRadius: "16px", padding: "10px 16px", animation: "fadeIn 0.3s ease" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", flexShrink: 0, animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
+              <span style={{ fontFamily: "var(--font-body)", fontSize: "12.5px", color: "rgba(255,220,200,0.7)", fontWeight: "400" }}>
+                clair is organising your note — the page will update automatically
+              </span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+                {[0,1,2].map(i => <div key={i} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "rgba(232,160,160,0.5)", animation: "bounce 1.2s ease-in-out infinite", animationDelay: `${i * 0.2}s` }}/>)}
+              </div>
+            </div>
+          )}
+
+          {/* Category tabs */}
+          {categories.length > 0 && (
+            <CategoryTabs
+              categories={categories}
+              activeCategory={activeCategory}
+              onSelect={setActiveCategory}
+              onRename={(id, name) => renameCategoryMutation.mutate({ id, name })}
+              onDelete={id => deleteCategoryMutation.mutate(id)}
+            />
+          )}
+
           {/* Notes container */}
           <div style={{ width: "100%", maxWidth: "780px", background: "rgba(255,253,249,0.72)", backdropFilter: "blur(16px)", border: "2px solid rgba(200,185,168,0.28)", borderRadius: "32px", boxShadow: "0 8px 48px rgba(160,140,120,0.1), inset 0 2px 12px rgba(255,255,255,0.8), inset 0 -2px 8px rgba(200,180,160,0.07)", padding: "28px 24px 8px", position: "relative", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", paddingBottom: "14px", borderBottom: "1.5px dashed rgba(200,185,168,0.35)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: "linear-gradient(135deg,#88b894,#6a9878)", boxShadow: "0 0 6px rgba(106,152,120,0.4)" }}/>
                 <span style={{ fontFamily: "var(--font-display)", fontSize: "15px", color: "#8a7a6a", fontStyle: "italic", fontWeight: "400" }}>
-                  {query ? `thoughts matching "${query}"` : "all thoughts"}
+                  {activeCategory
+                    ? categories.find(c => c.id === activeCategory)?.name || "filtered"
+                    : query ? `thoughts matching "${query}"` : "all thoughts"}
                 </span>
               </div>
               <span style={{ fontSize: "12px", color: "#c0b0a0", fontFamily: "var(--font-body)" }}>{liveFiltered.length} {liveFiltered.length === 1 ? "note" : "notes"}</span>
@@ -537,7 +1285,7 @@ export default function SearchableHome() {
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "14px", paddingTop: "4px" }}>
-                  {liveFiltered.map((note, i) => <NoteCard key={note.id} note={note} index={i} onClick={() => navigate(`/note/${note.id}`)}/>)}
+                  {liveFiltered.map((note, i) => <NoteCard key={note.id} note={note} index={i} onClick={() => setSelected(note)}/>)}
                 </div>
               )}
             </div>
@@ -554,15 +1302,31 @@ export default function SearchableHome() {
         </div>
       )}
 
-      {/* FAB */}
-      <button onClick={() => navigate('/note/new')} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#3d6b4a", boxShadow: "0 4px 20px rgba(130,175,140,0.25)", transition: "transform 0.18s, box-shadow 0.18s" }}
-        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(130,175,140,0.35)"; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(130,175,140,0.25)"; }}
-      >
-        <PlusIcon/>
-      </button>
+      {/* FAB Palette */}
+      <FABPalette
+        onNewText={() => navigate('/note/new')}
+        onNewVoice={() => setShowTranscribe(true)}
+      />
 
-      {selected && <NoteModal note={selected} onClose={() => setSelected(null)}/>}
+      {/* Modals */}
+      {selected && (
+        <NoteModal
+          note={selected}
+          onClose={() => setSelected(null)}
+          onDelete={() => deleteNoteMutation.mutate(selected.id)}
+          onEdit={() => { setSelected(null); navigate(`/note/${selected.id}`); }}
+        />
+      )}
+      {showTranscribe && (
+        <TranscribeModal
+          onClose={() => setShowTranscribe(false)}
+          onCreated={() => {
+            setShowTranscribe(false);
+            queryClient.invalidateQueries({ queryKey: ["notes"] });
+            // Stay on home — polling will auto-refresh as Whisper + organizer finish
+          }}
+        />
+      )}
     </>
   );
 }
