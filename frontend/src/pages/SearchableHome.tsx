@@ -1,10 +1,9 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import type { NoteResponse } from "../types/api";
-import NoteInput from "../components/NoteInput";
 import "../styles/global.css";
 
 // ── Accent palettes ────────────────────────────────────────────────────────────
@@ -371,12 +370,10 @@ const ResultsPage = ({ query, results, isSearching, onBack, onSelectNote, onQuer
 export default function SearchableHome() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
-  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"home" | "results">("home");
   const [searchResults, setSearchResults] = useState<DisplayNote[]>([]);
   const [selected, setSelected] = useState<DisplayNote | null>(null);
-  const [showInput, setShowInput] = useState(false);
 
   const { data: rawNotes = [], isLoading } = useQuery({
     queryKey: ["notes"],
@@ -558,7 +555,7 @@ export default function SearchableHome() {
       )}
 
       {/* FAB */}
-      <button onClick={() => setShowInput(true)} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#3d6b4a", boxShadow: "0 4px 20px rgba(130,175,140,0.25)", transition: "transform 0.18s, box-shadow 0.18s" }}
+      <button onClick={() => navigate('/note/new')} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#3d6b4a", boxShadow: "0 4px 20px rgba(130,175,140,0.25)", transition: "transform 0.18s, box-shadow 0.18s" }}
         onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(130,175,140,0.35)"; }}
         onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(130,175,140,0.25)"; }}
       >
@@ -566,15 +563,6 @@ export default function SearchableHome() {
       </button>
 
       {selected && <NoteModal note={selected} onClose={() => setSelected(null)}/>}
-      {showInput && (
-        <NoteInput
-          onClose={() => setShowInput(false)}
-          onCreated={() => {
-            setShowInput(false);
-            queryClient.invalidateQueries({ queryKey: ["notes"] });
-          }}
-        />
-      )}
     </>
   );
 }
