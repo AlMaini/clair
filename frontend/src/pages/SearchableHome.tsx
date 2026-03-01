@@ -179,130 +179,289 @@ const EditIcon = () => (
   </svg>
 );
 
-// ── Waveform bars ─────────────────────────────────────────────────────────────
-const Waveform = ({ active }: { active: boolean }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "32px", justifyContent: "center" }}>
-    {Array.from({ length: 16 }).map((_, i) => (
-      <div key={i} style={{
-        width: "3px", borderRadius: "3px",
-        background: active ? "#7aab86" : "#ddd0c4",
-        height: active ? undefined : "5px",
-        animation: active ? `wave ${0.6 + (i % 6) * 0.12}s ease-in-out infinite alternate` : "none",
-        animationDelay: `${(i * 0.05) % 0.6}s`,
-        minHeight: "3px", maxHeight: "28px",
-        transition: "background 0.3s",
-      }}/>
-    ))}
-  </div>
-);
-
 // ── TranscribeModal ────────────────────────────────────────────────────────────
+// Records real audio via MediaRecorder → uploads to backend → Whisper transcribes
 const TranscribeModal = ({
   onClose,
-  onCreate,
+  onCreated,
 }: {
   onClose: () => void;
-  onCreate: (content: string) => void;
+  onCreated: (noteId: string) => void;
 }) => {
-  const [phase, setPhase] = useState<"idle" | "recording" | "done">("idle");
-  const [transcript, setTranscript] = useState("");
-  const [manualMode, setManualMode] = useState(false);
-  const recRef = useRef<any>(null);
+  type Phase = "idle" | "requesting" | "recording" | "uploading" | "error";
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [secs, setSecs] = useState(0);
+  const [bars, setBars] = useState<number[]>(Array(28).fill(4));
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const hasSpeech = typeof window !== "undefined" &&
-    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+  const recorderRef  = useRef<MediaRecorder | null>(null);
+  const chunksRef    = useRef<Blob[]>([]);
+  const streamRef    = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    if (!hasSpeech && phase === "idle") setManualMode(true);
-  }, [hasSpeech, phase]);
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    cancelAnimationFrame(animFrameRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+  }, []);
 
-  const startRecording = () => {
-    setPhase("recording");
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const rec = new SR();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.onresult = (e: any) => {
-      let t = "";
-      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-      setTranscript(t);
+  const startRecording = async () => {
+    setPhase("requesting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      // Web Audio analyser for real waveform
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      src.connect(analyser);
+      const dataArr = new Uint8Array(analyser.frequencyBinCount);
+      const animate = () => {
+        analyser.getByteFrequencyData(dataArr);
+        setBars(Array.from({ length: 28 }, (_, i) => {
+          const idx = Math.floor(i * dataArr.length / 28);
+          return Math.max(4, (dataArr[idx] / 255) * 52);
+        }));
+        animFrameRef.current = requestAnimationFrame(animate);
+      };
+      animFrameRef.current = requestAnimationFrame(animate);
+
+      // MediaRecorder
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/ogg";
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.start(100);
+      recorderRef.current = recorder;
+
+      // Timer
+      setSecs(0);
+      timerRef.current = setInterval(() => setSecs(s => s + 1), 1000);
+      setPhase("recording");
+    } catch {
+      setPhase("error");
+      setErrorMsg("Microphone access denied. Please allow access in your browser settings and try again.");
+    }
+  };
+
+  const stopAndUpload = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    cancelAnimationFrame(animFrameRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    setPhase("uploading");
+
+    recorder.onstop = async () => {
+      const mimeType = recorder.mimeType || "audio/webm";
+      const ext = mimeType.includes("ogg") ? "ogg" : "webm";
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const file = new File([blob], `voice_note.${ext}`, { type: mimeType });
+
+      const form = new FormData();
+      form.append("content_type", "voice");
+      form.append("content", "");
+      form.append("file", file, file.name);
+
+      try {
+        const data = await api.post<{ id: string }>("/api/notes/", form);
+        onCreated(data.id);
+      } catch {
+        setPhase("error");
+        setErrorMsg("Upload failed — please check your connection and try again.");
+      }
     };
-    rec.start();
-    recRef.current = rec;
+    recorder.stop();
   };
 
-  const stopRecording = () => {
-    if (recRef.current) recRef.current.stop();
-    setPhase("done");
+  const fmt = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  // Shared label/subtitle text
+  const titles: Record<Phase, string> = {
+    idle:      "✦ new voice note",
+    requesting: "requesting mic…",
+    recording: "listening",
+    uploading: "sending to clair…",
+    error:     "something went wrong",
+  };
+  const subtitles: Record<Phase, string> = {
+    idle:      "speak freely — whisper will capture every word",
+    requesting: "allowing microphone access…",
+    recording: fmt(secs),
+    uploading: "your thought is being transcribed",
+    error:     errorMsg,
   };
 
-  const handleSave = () => {
-    if (transcript.trim()) onCreate(transcript.trim());
-  };
+  const isRecording = phase === "recording";
+  const isIdle      = phase === "idle";
+  const isUploading = phase === "uploading";
+  const isError     = phase === "error";
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(242,238,232,0.88)", backdropFilter: "blur(16px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(18,14,10,0.72)", backdropFilter: "blur(20px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={isRecording ? undefined : onClose}
     >
       <div
-        style={{ width: "min(460px,94vw)", background: "linear-gradient(150deg,#fffef9,#fdf5ec)", border: "2px solid rgba(180,162,145,0.25)", borderRadius: "28px", padding: "32px 28px 24px", boxShadow: "0 16px 60px rgba(140,120,100,0.14)", position: "relative", animation: "popBubble 0.32s cubic-bezier(.22,.68,0,1.25)" }}
         onClick={e => e.stopPropagation()}
+        style={{ width: "min(420px,94vw)", position: "relative", animation: "popBubble 0.35s cubic-bezier(.22,.68,0,1.3)" }}
       >
-        <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "rgba(0,0,0,0.05)", border: "none", borderRadius: "50%", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
-          <CloseIcon/>
-        </button>
+        {/* Card */}
+        <div style={{
+          background: "linear-gradient(160deg, #1e1812 0%, #16120e 100%)",
+          border: "1.5px solid rgba(255,240,220,0.08)",
+          borderRadius: "28px",
+          padding: "36px 32px 28px",
+          boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)",
+          overflow: "hidden",
+          position: "relative",
+        }}>
+          {/* Subtle ambient glow */}
+          <div style={{ position: "absolute", top: "-60px", left: "50%", transform: "translateX(-50%)", width: "200px", height: "200px", background: isRecording ? "radial-gradient(circle, rgba(232,160,160,0.12) 0%, transparent 70%)" : "radial-gradient(circle, rgba(130,175,140,0.1) 0%, transparent 70%)", pointerEvents: "none", transition: "background 0.6s ease" }}/>
 
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: "20px", color: "#2e2620", marginBottom: "4px", fontWeight: "600" }}>
-          {phase === "idle" ? "✦ new voice note" : phase === "recording" ? "listening…" : "ready to save"}
-        </h2>
-        <p style={{ fontSize: "12.5px", color: "#b0a090", marginBottom: "20px", fontFamily: "var(--font-body)", fontWeight: "300" }}>
-          {phase === "idle" ? "speak your thoughts — clair will capture them" : phase === "recording" ? "tap done when finished" : "review and save your thought"}
-        </p>
+          {/* Close */}
+          {!isRecording && !isUploading && (
+            <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.07)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.4)" }}>
+              <CloseIcon/>
+            </button>
+          )}
 
-        {manualMode ? (
-          <textarea
-            value={transcript}
-            onChange={e => setTranscript(e.target.value)}
-            placeholder="Type your thought here…"
-            style={{ width: "100%", minHeight: "100px", background: "rgba(255,255,255,0.7)", border: "1.5px solid rgba(200,185,170,0.3)", borderRadius: "12px", padding: "12px 14px", fontFamily: "var(--font-body)", fontSize: "13.5px", color: "#3a2e28", outline: "none", resize: "vertical", marginBottom: "16px" }}
-          />
-        ) : (
-          <div style={{ background: "rgba(255,255,255,0.7)", borderRadius: "16px", padding: "14px 18px", marginBottom: "16px", border: "1.5px solid rgba(200,185,170,0.18)" }}>
-            <Waveform active={phase === "recording"}/>
-            {transcript && (
-              <p style={{ marginTop: "8px", fontSize: "12px", color: "#9a8878", fontStyle: "italic", lineHeight: "1.55", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                "{transcript.slice(0, 200)}{transcript.length > 200 ? "…" : ""}"
-              </p>
+          {/* Title */}
+          <div style={{ marginBottom: "28px" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: "rgba(255,248,238,0.92)", fontWeight: "600", marginBottom: "6px", letterSpacing: "-0.01em" }}>
+              {titles[phase]}
+            </div>
+            <div style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: isError ? "#e8a0a0" : "rgba(255,240,220,0.38)", fontWeight: "300", letterSpacing: "0.02em", transition: "color 0.3s" }}>
+              {subtitles[phase]}
+            </div>
+          </div>
+
+          {/* Central visualisation area */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "28px", marginBottom: "28px" }}>
+
+            {/* Waveform / mic orb */}
+            {isIdle && (
+              <div style={{ position: "relative", width: "100px", height: "100px" }}>
+                {/* Pulse rings */}
+                <div style={{ position: "absolute", inset: "-16px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.2)", animation: "pulseRing 2.4s ease-out infinite" }}/>
+                <div style={{ position: "absolute", inset: "-8px", borderRadius: "50%", border: "1.5px solid rgba(130,175,140,0.15)", animation: "pulseRing 2.4s ease-out infinite 0.6s" }}/>
+                <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(130,175,140,0.25), rgba(106,152,120,0.15))", border: "1.5px solid rgba(130,175,140,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(130,175,140,0.9)", boxShadow: "0 0 32px rgba(130,175,140,0.12), inset 0 1px 0 rgba(255,255,255,0.05)" }}>
+                  <MicIcon/>
+                </div>
+              </div>
+            )}
+
+            {(phase === "requesting") && (
+              <div style={{ width: "100px", height: "100px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(200,185,165,0.12), rgba(180,165,145,0.08))", border: "1.5px solid rgba(200,185,165,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(200,185,165,0.5)" }}>
+                <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(200,185,165,0.3)", borderTopColor: "rgba(200,185,165,0.7)", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
+              </div>
+            )}
+
+            {isRecording && (
+              <>
+                {/* Live waveform bars */}
+                <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "60px" }}>
+                  {bars.map((h, i) => (
+                    <div key={i} style={{
+                      width: "3px", borderRadius: "2px",
+                      height: `${h}px`,
+                      background: `linear-gradient(to top, rgba(232,160,160,0.9), rgba(200,130,130,0.5))`,
+                      transition: "height 0.08s ease",
+                      boxShadow: h > 20 ? "0 0 6px rgba(232,160,160,0.4)" : "none",
+                    }}/>
+                  ))}
+                </div>
+                {/* Rec indicator */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 8px rgba(232,112,112,0.6)" }}/>
+                  <span style={{ fontFamily: "var(--font-body)", fontSize: "13px", color: "rgba(255,240,220,0.5)", letterSpacing: "0.12em", fontWeight: "600" }}>REC</span>
+                </div>
+              </>
+            )}
+
+            {isUploading && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px" }}>
+                <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "linear-gradient(145deg, rgba(130,175,140,0.15), rgba(106,152,120,0.08))", border: "1.5px solid rgba(130,175,140,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: "28px", height: "28px", border: "2.5px solid rgba(130,175,140,0.25)", borderTopColor: "rgba(130,175,140,0.8)", borderRadius: "50%", animation: "spin 0.9s linear infinite" }}/>
+                </div>
+                <div style={{ display: "flex", gap: "5px" }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{ width: "5px", height: "5px", borderRadius: "50%", background: "rgba(130,175,140,0.6)", animation: `bounce 1.2s ease-in-out infinite`, animationDelay: `${i * 0.2}s` }}/>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isError && (
+              <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "rgba(220,100,100,0.1)", border: "1.5px solid rgba(220,100,100,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>
+                ×
+              </div>
             )}
           </div>
-        )}
 
-        <div style={{ display: "flex", gap: "8px" }}>
-          {phase === "idle" && !manualMode && (
-            <button onClick={startRecording} style={{ flex: 1, background: "linear-gradient(135deg,#82af8c,#6a9878)", color: "#fff", border: "none", borderRadius: "14px", padding: "13px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "var(--font-body)" }}>
-              <MicIcon/>start speaking
-            </button>
-          )}
-          {phase === "recording" && (
-            <button onClick={stopRecording} style={{ flex: 1, background: "linear-gradient(135deg,#e8a0b0,#d4788a)", color: "#fff", border: "none", borderRadius: "14px", padding: "13px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", fontFamily: "var(--font-body)" }}>
-              ◼ done
-            </button>
-          )}
-          {(phase === "done" || manualMode) && (
-            <>
-              <button onClick={handleSave} disabled={!transcript.trim()} style={{ flex: 1, background: transcript.trim() ? "linear-gradient(135deg,#82af8c,#6a9878)" : "rgba(130,175,140,0.3)", color: "#fff", border: "none", borderRadius: "14px", padding: "13px", fontWeight: "700", fontSize: "13.5px", cursor: transcript.trim() ? "pointer" : "default", fontFamily: "var(--font-body)" }}>
-                save thought ✦
+          {/* Actions */}
+          <div style={{ display: "flex", gap: "10px" }}>
+            {isIdle && (
+              <button
+                onClick={startRecording}
+                style={{ flex: 1, background: "linear-gradient(135deg, rgba(130,175,140,0.28), rgba(106,152,120,0.2))", color: "rgba(180,230,190,0.9)", border: "1.5px solid rgba(130,175,140,0.3)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", fontFamily: "var(--font-body)", letterSpacing: "0.01em", transition: "all 0.18s", boxShadow: "0 2px 16px rgba(130,175,140,0.08)" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(130,175,140,0.38), rgba(106,152,120,0.28))"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(130,175,140,0.18)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(130,175,140,0.28), rgba(106,152,120,0.2))"; e.currentTarget.style.boxShadow = "0 2px 16px rgba(130,175,140,0.08)"; }}
+              >
+                <MicIcon/> start recording
               </button>
-              <button onClick={onClose} style={{ background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.07)", color: "#9a8880", borderRadius: "14px", padding: "13px 16px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "12.5px" }}>
-                cancel
+            )}
+
+            {isRecording && (
+              <button
+                onClick={stopAndUpload}
+                style={{ flex: 1, background: "linear-gradient(135deg, rgba(232,130,130,0.22), rgba(200,100,100,0.15))", color: "rgba(255,200,200,0.9)", border: "1.5px solid rgba(220,120,120,0.3)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "14px", cursor: "pointer", fontFamily: "var(--font-body)", letterSpacing: "0.01em", display: "flex", alignItems: "center", justifyContent: "center", gap: "9px", transition: "all 0.18s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(232,130,130,0.32), rgba(200,100,100,0.25))"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(232,130,130,0.22), rgba(200,100,100,0.15))"; }}
+              >
+                <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "rgba(255,200,200,0.9)", flexShrink: 0 }}/>
+                stop & save
               </button>
-            </>
+            )}
+
+            {isError && (
+              <>
+                <button
+                  onClick={() => { setPhase("idle"); setErrorMsg(""); setSecs(0); }}
+                  style={{ flex: 1, background: "linear-gradient(135deg, rgba(130,175,140,0.2), rgba(106,152,120,0.14))", color: "rgba(180,230,190,0.8)", border: "1.5px solid rgba(130,175,140,0.25)", borderRadius: "16px", padding: "14px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", fontFamily: "var(--font-body)" }}
+                >
+                  try again
+                </button>
+                <button
+                  onClick={onClose}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.08)", color: "rgba(255,240,220,0.35)", borderRadius: "16px", padding: "14px 18px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "13px" }}
+                >
+                  close
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Footer hint */}
+          {isRecording && (
+            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "rgba(255,240,220,0.18)", fontFamily: "var(--font-body)" }}>
+              tap stop when you're done speaking
+            </p>
           )}
-          {phase === "idle" && !manualMode && (
-            <button onClick={() => setManualMode(true)} style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.07)", color: "#9a8880", borderRadius: "14px", padding: "13px 14px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "12px" }}>
-              type instead
-            </button>
+          {isIdle && (
+            <p style={{ marginTop: "14px", textAlign: "center", fontSize: "11px", color: "rgba(255,240,220,0.18)", fontFamily: "var(--font-body)" }}>
+              whisper-1 · your words stay private
+            </p>
           )}
         </div>
       </div>
@@ -855,19 +1014,6 @@ export default function SearchableHome() {
     },
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const form = new FormData();
-      form.append("content", content);
-      form.append("content_type", "text");
-      return api.post<{ id: string }>("/api/notes/", form);
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["notes"] });
-      navigate(`/note/${data.id}`);
-    },
-  });
-
   const deleteNoteMutation = useMutation({
     mutationFn: (noteId: string) => api.delete(`/api/notes/${noteId}`),
     onSuccess: () => {
@@ -928,6 +1074,9 @@ export default function SearchableHome() {
         @keyframes heroDrift { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0%, 100% { box-shadow: 0 8px 32px rgba(130,175,140,0.18), 0 0 0 8px rgba(130,175,140,0.07); } 50% { box-shadow: 0 8px 40px rgba(130,175,140,0.3), 0 0 0 10px rgba(130,175,140,0.1); } }
         @keyframes logoBounce { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } 60% { transform: translateY(-3px); } }
+        @keyframes pulseRing { 0% { transform: scale(0.9); opacity: 0.7; } 100% { transform: scale(1.5); opacity: 0; } }
+        @keyframes recBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
       `}</style>
 
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(154,160,216,0.1) 0%, transparent 55%), radial-gradient(ellipse 55% 40% at 88% 75%, rgba(130,175,140,0.09) 0%, transparent 50%), radial-gradient(ellipse 45% 38% at 12% 68%, rgba(232,160,176,0.07) 0%, transparent 50%)" }}/>
@@ -1081,9 +1230,10 @@ export default function SearchableHome() {
       {showTranscribe && (
         <TranscribeModal
           onClose={() => setShowTranscribe(false)}
-          onCreate={content => {
+          onCreated={(noteId) => {
             setShowTranscribe(false);
-            createMutation.mutate(content);
+            queryClient.invalidateQueries({ queryKey: ["notes"] });
+            navigate(`/note/${noteId}`);
           }}
         />
       )}
