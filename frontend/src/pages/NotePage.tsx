@@ -556,15 +556,18 @@ export default function NotePage() {
       const content = fetchedNote.processed_content || fetchedNote.raw_content;
       const lines = content.split("\n");
       const firstLine = lines[0].trim();
-      const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
-      const body = lines.slice(1).join("\n").trim() || fetchedNote.raw_content;
-      
+      // Use stored title if available; otherwise derive from first line
+      const title = fetchedNote.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
+      // Body is always raw_content (title is now an independent field)
+      const body = fetchedNote.raw_content;
+
       setLocalNote({
         id: fetchedNote.id,
         title,
         body,
         tags: fetchedNote.tags,
-        accent: accentFromCategory(fetchedNote.category?.name, fetchedNote.id),
+        // Use stored color if available; otherwise derive from category
+        accent: (fetchedNote.color as keyof typeof ACCENTS) || accentFromCategory(fetchedNote.category?.name, fetchedNote.id),
         summary: fetchedNote.processed_content?.slice(0, 140) || "",
         date: new Date(fetchedNote.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         research: fetchedNote.resources.map(r => r.title || r.url),
@@ -588,8 +591,8 @@ export default function NotePage() {
 
   // Mutation for updating an existing note
   const updateMutation = useMutation({
-    mutationFn: async ({ noteId, content, tags }: { noteId: string; content: string; tags: string[] }) => {
-      return api.patch<NoteResponse>(`/api/notes/${noteId}`, { content, tags });
+    mutationFn: async ({ noteId, content, title, tags, color }: { noteId: string; content: string; title?: string; tags: string[]; color?: string }) => {
+      return api.patch<NoteResponse>(`/api/notes/${noteId}`, { content, title, tags, color });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notes"] });
@@ -626,31 +629,39 @@ export default function NotePage() {
 
   const handleUpdate = useCallback((updated: any) => {
     setLocalNote(updated);
-    
+
     // Only auto-save for existing notes
     if (!isNewNote && updated.id && updated.id !== "new") {
-      const content = `${updated.title}\n${updated.body}`;
-      updateMutation.mutate({ noteId: updated.id, content, tags: updated.tags });
+      updateMutation.mutate({
+        noteId: updated.id,
+        content: updated.body,
+        title: updated.title,
+        tags: updated.tags,
+        color: updated.accent,
+      });
     }
   }, [isNewNote, updateMutation]);
 
   const handleSave = useCallback(() => {
     if (!localNote) return;
-    
-    const content = `${localNote.title}\n${localNote.body}`;
-    
+
     if (isNewNote) {
-      // Create new note and trigger AI analysis
-      if (content.trim() && content.trim() !== "\n") {
-        createMutation.mutate(content);
+      // Create new note — send body as content; AI will generate title
+      if (localNote.body?.trim()) {
+        createMutation.mutate(localNote.body);
       }
     } else if (localNote.id && localNote.id !== "new") {
-      // Update existing note and trigger AI reprocessing
+      // Update existing note with separate title, body, color, then trigger AI reprocessing
       updateMutation.mutate(
-        { noteId: localNote.id, content, tags: localNote.tags },
+        {
+          noteId: localNote.id,
+          content: localNote.body,
+          title: localNote.title,
+          tags: localNote.tags,
+          color: localNote.accent,
+        },
         {
           onSuccess: () => {
-            // Trigger AI analysis after save
             reprocessMutation.mutate(localNote.id);
           },
         }
@@ -716,13 +727,13 @@ export default function NotePage() {
     const content = n.processed_content || n.raw_content;
     const lines = content.split("\n");
     const firstLine = lines[0].trim();
-    const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
+    const title = n.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
     return {
       id: n.id,
       title,
       date: new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       tags: n.tags,
-      accent: accentFromCategory(n.category?.name, n.id),
+      accent: (n.color as keyof typeof ACCENTS) || accentFromCategory(n.category?.name, n.id),
       body: "",
       summary: "",
       research: [],

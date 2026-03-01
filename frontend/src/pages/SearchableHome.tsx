@@ -1,9 +1,9 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import type { NoteResponse } from "../types/api";
+import type { NoteResponse, Category } from "../types/api";
 import "../styles/global.css";
 
 // ── Accent palettes ────────────────────────────────────────────────────────────
@@ -42,10 +42,12 @@ function toDisplay(note: NoteResponse, index: number): DisplayNote {
   const content = note.processed_content || note.raw_content;
   const lines = content.split("\n");
   const firstLine = lines[0].trim();
-  const title = firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled";
+  // Use stored title if available, otherwise derive from first line
+  const title = note.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
   const summary = lines.slice(1).join("\n").trim() || note.raw_content;
   const date = new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const accent = accentFromCategory(note.category?.name, index);
+  // Use stored color if available, otherwise derive from category
+  const accent = (note.color as AccentKey) || accentFromCategory(note.category?.name, index);
   return {
     id: note.id,
     title,
@@ -138,17 +140,211 @@ const PlusIcon = () => (
     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
   </svg>
 );
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+  </svg>
+);
+const MicIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+  </svg>
+);
+const PencilIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+);
+const LinkIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+  </svg>
+);
+const ImageIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+    <circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>
+  </svg>
+);
+const EditIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+);
+
+// ── Waveform bars ─────────────────────────────────────────────────────────────
+const Waveform = ({ active }: { active: boolean }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: "3px", height: "32px", justifyContent: "center" }}>
+    {Array.from({ length: 16 }).map((_, i) => (
+      <div key={i} style={{
+        width: "3px", borderRadius: "3px",
+        background: active ? "#7aab86" : "#ddd0c4",
+        height: active ? undefined : "5px",
+        animation: active ? `wave ${0.6 + (i % 6) * 0.12}s ease-in-out infinite alternate` : "none",
+        animationDelay: `${(i * 0.05) % 0.6}s`,
+        minHeight: "3px", maxHeight: "28px",
+        transition: "background 0.3s",
+      }}/>
+    ))}
+  </div>
+);
+
+// ── TranscribeModal ────────────────────────────────────────────────────────────
+const TranscribeModal = ({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (content: string) => void;
+}) => {
+  const [phase, setPhase] = useState<"idle" | "recording" | "done">("idle");
+  const [transcript, setTranscript] = useState("");
+  const [manualMode, setManualMode] = useState(false);
+  const recRef = useRef<any>(null);
+
+  const hasSpeech = typeof window !== "undefined" &&
+    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  useEffect(() => {
+    if (!hasSpeech && phase === "idle") setManualMode(true);
+  }, [hasSpeech, phase]);
+
+  const startRecording = () => {
+    setPhase("recording");
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (e: any) => {
+      let t = "";
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      setTranscript(t);
+    };
+    rec.start();
+    recRef.current = rec;
+  };
+
+  const stopRecording = () => {
+    if (recRef.current) recRef.current.stop();
+    setPhase("done");
+  };
+
+  const handleSave = () => {
+    if (transcript.trim()) onCreate(transcript.trim());
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(242,238,232,0.88)", backdropFilter: "blur(16px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={onClose}
+    >
+      <div
+        style={{ width: "min(460px,94vw)", background: "linear-gradient(150deg,#fffef9,#fdf5ec)", border: "2px solid rgba(180,162,145,0.25)", borderRadius: "28px", padding: "32px 28px 24px", boxShadow: "0 16px 60px rgba(140,120,100,0.14)", position: "relative", animation: "popBubble 0.32s cubic-bezier(.22,.68,0,1.25)" }}
+        onClick={e => e.stopPropagation()}
+      >
+        <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "rgba(0,0,0,0.05)", border: "none", borderRadius: "50%", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
+          <CloseIcon/>
+        </button>
+
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: "20px", color: "#2e2620", marginBottom: "4px", fontWeight: "600" }}>
+          {phase === "idle" ? "✦ new voice note" : phase === "recording" ? "listening…" : "ready to save"}
+        </h2>
+        <p style={{ fontSize: "12.5px", color: "#b0a090", marginBottom: "20px", fontFamily: "var(--font-body)", fontWeight: "300" }}>
+          {phase === "idle" ? "speak your thoughts — clair will capture them" : phase === "recording" ? "tap done when finished" : "review and save your thought"}
+        </p>
+
+        {manualMode ? (
+          <textarea
+            value={transcript}
+            onChange={e => setTranscript(e.target.value)}
+            placeholder="Type your thought here…"
+            style={{ width: "100%", minHeight: "100px", background: "rgba(255,255,255,0.7)", border: "1.5px solid rgba(200,185,170,0.3)", borderRadius: "12px", padding: "12px 14px", fontFamily: "var(--font-body)", fontSize: "13.5px", color: "#3a2e28", outline: "none", resize: "vertical", marginBottom: "16px" }}
+          />
+        ) : (
+          <div style={{ background: "rgba(255,255,255,0.7)", borderRadius: "16px", padding: "14px 18px", marginBottom: "16px", border: "1.5px solid rgba(200,185,170,0.18)" }}>
+            <Waveform active={phase === "recording"}/>
+            {transcript && (
+              <p style={{ marginTop: "8px", fontSize: "12px", color: "#9a8878", fontStyle: "italic", lineHeight: "1.55", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                "{transcript.slice(0, 200)}{transcript.length > 200 ? "…" : ""}"
+              </p>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "8px" }}>
+          {phase === "idle" && !manualMode && (
+            <button onClick={startRecording} style={{ flex: 1, background: "linear-gradient(135deg,#82af8c,#6a9878)", color: "#fff", border: "none", borderRadius: "14px", padding: "13px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "var(--font-body)" }}>
+              <MicIcon/>start speaking
+            </button>
+          )}
+          {phase === "recording" && (
+            <button onClick={stopRecording} style={{ flex: 1, background: "linear-gradient(135deg,#e8a0b0,#d4788a)", color: "#fff", border: "none", borderRadius: "14px", padding: "13px", fontWeight: "700", fontSize: "13.5px", cursor: "pointer", fontFamily: "var(--font-body)" }}>
+              ◼ done
+            </button>
+          )}
+          {(phase === "done" || manualMode) && (
+            <>
+              <button onClick={handleSave} disabled={!transcript.trim()} style={{ flex: 1, background: transcript.trim() ? "linear-gradient(135deg,#82af8c,#6a9878)" : "rgba(130,175,140,0.3)", color: "#fff", border: "none", borderRadius: "14px", padding: "13px", fontWeight: "700", fontSize: "13.5px", cursor: transcript.trim() ? "pointer" : "default", fontFamily: "var(--font-body)" }}>
+                save thought ✦
+              </button>
+              <button onClick={onClose} style={{ background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.07)", color: "#9a8880", borderRadius: "14px", padding: "13px 16px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "12.5px" }}>
+                cancel
+              </button>
+            </>
+          )}
+          {phase === "idle" && !manualMode && (
+            <button onClick={() => setManualMode(true)} style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.07)", color: "#9a8880", borderRadius: "14px", padding: "13px 14px", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "12px" }}>
+              type instead
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ── Note Detail Modal ──────────────────────────────────────────────────────────
-const NoteModal = ({ note, onClose }: { note: DisplayNote; onClose: () => void }) => {
+const NoteModal = ({
+  note,
+  onClose,
+  onDelete,
+}: {
+  note: DisplayNote;
+  onClose: () => void;
+  onDelete?: () => void;
+}) => {
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const acc = ACCENTS[note.accent];
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(12px)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ position: "relative", width: "min(580px, 94vw)", animation: "popBubble 0.38s cubic-bezier(.22,.68,0,1.3)" }} onClick={e => e.stopPropagation()}>
         <div style={{ background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "32px", padding: "36px 36px 30px", boxShadow: `0 8px 40px ${acc.glow}, 0 2px 16px rgba(160,140,120,0.1)`, position: "relative" }}>
-          <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
-            <CloseIcon/>
-          </button>
+          {/* Top-right buttons */}
+          <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: "6px", alignItems: "center" }}>
+            {onDelete && !deleteConfirm && (
+              <button onClick={() => setDeleteConfirm(true)} style={{ background: "rgba(220,100,100,0.08)", border: "1.5px solid rgba(220,100,100,0.2)", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#b05050" }}>
+                <TrashIcon/>
+              </button>
+            )}
+            {deleteConfirm && (
+              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                <span style={{ fontSize: "11px", color: "#b05050", fontFamily: "var(--font-body)" }}>delete?</span>
+                <button onClick={() => { onDelete?.(); }} style={{ padding: "4px 8px", background: "#dc6464", border: "none", borderRadius: "8px", fontSize: "11px", color: "#fff", cursor: "pointer", fontFamily: "var(--font-body)", fontWeight: "700" }}>yes</button>
+                <button onClick={() => setDeleteConfirm(false)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "8px", fontSize: "11px", color: "#7a6858", cursor: "pointer", fontFamily: "var(--font-body)" }}>no</button>
+              </div>
+            )}
+            <button onClick={onClose} style={{ background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
+              <CloseIcon/>
+            </button>
+          </div>
+
           <div style={{ fontSize: "11.5px", color: "#b0a090", fontFamily: "var(--font-body)", marginBottom: "7px", letterSpacing: "0.04em" }}>{note.date}</div>
           <h2 style={{ fontFamily: "var(--font-display)", fontSize: "26px", color: "#3a3028", marginBottom: "14px", lineHeight: "1.25", fontWeight: "600", paddingRight: "30px" }}>{note.title}</h2>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "18px" }}>
@@ -277,6 +473,257 @@ const FolderCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () 
   );
 };
 
+// ── Category Tabs ──────────────────────────────────────────────────────────────
+const CategoryTabs = ({
+  categories,
+  activeCategory,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  categories: Category[];
+  activeCategory: string | null;
+  onSelect: (id: string | null) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [hoveringId, setHoveringId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = (cat: Category) => {
+    setEditingId(cat.id);
+    setEditValue(cat.name);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const commitEdit = (id: string) => {
+    if (editValue.trim() && editValue.trim() !== categories.find(c => c.id === id)?.name) {
+      onRename(id, editValue.trim());
+    }
+    setEditingId(null);
+  };
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (window.confirm("Delete this category? Notes will not be deleted.")) {
+      onDelete(id);
+    }
+  };
+
+  const pillBase: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: "4px",
+    padding: "5px 13px", borderRadius: "20px",
+    fontFamily: "var(--font-body)", fontSize: "12.5px", fontWeight: "600",
+    cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+    transition: "all 0.15s", border: "1.5px solid transparent",
+  };
+
+  return (
+    <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px" }}>
+      <div style={{
+        display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px",
+        scrollbarWidth: "none",
+      }}>
+        {/* All tab */}
+        <button
+          onClick={() => onSelect(null)}
+          style={{
+            ...pillBase,
+            background: activeCategory === null ? "rgba(130,175,140,0.18)" : "rgba(255,255,255,0.7)",
+            border: `1.5px solid ${activeCategory === null ? "rgba(130,175,140,0.5)" : "rgba(200,185,168,0.3)"}`,
+            color: activeCategory === null ? "#3d7a50" : "#8a7a6a",
+          }}
+        >
+          All
+        </button>
+
+        {categories.map(cat => (
+          <div
+            key={cat.id}
+            style={{ position: "relative", flexShrink: 0 }}
+            onMouseEnter={() => setHoveringId(cat.id)}
+            onMouseLeave={() => setHoveringId(null)}
+          >
+            {editingId === cat.id ? (
+              <input
+                ref={inputRef}
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(cat.id)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") commitEdit(cat.id);
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                style={{
+                  padding: "5px 10px", borderRadius: "20px",
+                  fontFamily: "var(--font-body)", fontSize: "12.5px", fontWeight: "600",
+                  border: "1.5px solid rgba(130,175,140,0.5)",
+                  outline: "none", background: "rgba(255,255,255,0.9)",
+                  color: "#3d7a50", width: `${Math.max(editValue.length * 8 + 24, 80)}px`,
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => onSelect(cat.id)}
+                onDoubleClick={() => startEdit(cat)}
+                style={{
+                  ...pillBase,
+                  background: activeCategory === cat.id ? "rgba(130,175,140,0.18)" : "rgba(255,255,255,0.7)",
+                  border: `1.5px solid ${activeCategory === cat.id ? "rgba(130,175,140,0.5)" : "rgba(200,185,168,0.3)"}`,
+                  color: activeCategory === cat.id ? "#3d7a50" : "#8a7a6a",
+                  paddingRight: hoveringId === cat.id ? "6px" : "13px",
+                }}
+              >
+                {cat.name}
+                {hoveringId === cat.id && (
+                  <span
+                    onClick={e => handleDelete(e, cat.id)}
+                    style={{ display: "flex", alignItems: "center", marginLeft: "2px", color: "#b05050", opacity: 0.7, cursor: "pointer" }}
+                    title="Delete category"
+                  >
+                    <CloseIcon/>
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── FAB Palette ────────────────────────────────────────────────────────────────
+const FABPalette = ({
+  onNewText,
+  onNewVoice,
+}: {
+  onNewText: () => void;
+  onNewVoice: () => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [tooltip, setTooltip] = useState<string | null>(null);
+  const fabRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click or Escape
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const handleClick = (e: MouseEvent) => {
+      if (fabRef.current && !fabRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    document.addEventListener("mousedown", handleClick);
+    return () => { document.removeEventListener("keydown", handleKey); document.removeEventListener("mousedown", handleClick); };
+  }, [open]);
+
+  const miniBtn = (icon: React.ReactNode, label: string, onClick: () => void, color = "#3d6b4a") => (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "flex-end" }}>
+      {open && (
+        <span style={{
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.3)", borderRadius: "8px",
+          padding: "4px 10px", fontSize: "11.5px", fontFamily: "var(--font-body)",
+          color: "#7a6a60", fontWeight: "600", whiteSpace: "nowrap",
+          animation: "fadeIn 0.15s ease",
+          boxShadow: "0 2px 8px rgba(140,120,100,0.08)",
+        }}>{label}</span>
+      )}
+      <button
+        onClick={onClick}
+        style={{
+          width: 42, height: 42, borderRadius: "50%",
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.3)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", color,
+          boxShadow: "0 2px 12px rgba(140,120,100,0.12)",
+          transition: "transform 0.15s, box-shadow 0.15s",
+          animation: "popUp 0.2s cubic-bezier(.22,.68,0,1.3)",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(140,120,100,0.2)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(140,120,100,0.12)"; }}
+      >
+        {icon}
+      </button>
+    </div>
+  );
+
+  const placeholderBtn = (icon: React.ReactNode, label: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "flex-end" }}>
+      {open && tooltip === label && (
+        <span style={{
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.3)", borderRadius: "8px",
+          padding: "4px 10px", fontSize: "11.5px", fontFamily: "var(--font-body)",
+          color: "#b0a090", fontWeight: "600", whiteSpace: "nowrap",
+          animation: "fadeIn 0.15s ease",
+          boxShadow: "0 2px 8px rgba(140,120,100,0.08)",
+        }}>coming soon</span>
+      )}
+      <button
+        onClick={() => setTooltip(tooltip === label ? null : label)}
+        style={{
+          width: 42, height: 42, borderRadius: "50%",
+          background: "rgba(255,255,255,0.7)", backdropFilter: "blur(8px)",
+          border: "1.5px solid rgba(200,185,168,0.22)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", color: "#c0b0a0",
+          boxShadow: "0 2px 8px rgba(140,120,100,0.07)",
+          animation: "popUp 0.2s cubic-bezier(.22,.68,0,1.3)",
+        }}
+      >
+        {icon}
+      </button>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 9, background: "rgba(250,246,240,0.4)", backdropFilter: "blur(2px)" }}
+        />
+      )}
+
+      <div ref={fabRef} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "10px" }}>
+        {/* Palette items (shown when open) */}
+        {open && (
+          <>
+            {placeholderBtn(<ImageIcon/>, "Image")}
+            {placeholderBtn(<LinkIcon/>, "Link")}
+            {miniBtn(<MicIcon/>, "Voice note", () => { setOpen(false); onNewVoice(); }, "#5a6a9a")}
+            {miniBtn(<PencilIcon/>, "Text note", () => { setOpen(false); onNewText(); })}
+          </>
+        )}
+
+        {/* Main FAB */}
+        <button
+          onClick={() => setOpen(v => !v)}
+          style={{
+            width: 52, height: 52, borderRadius: "50%",
+            background: open ? "linear-gradient(145deg, #c8d8ca, #b0c8b8)" : "linear-gradient(145deg, #e8f2ea, #d2e8da)",
+            border: "2px solid rgba(130,175,140,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", color: "#3d6b4a",
+            boxShadow: "0 4px 20px rgba(130,175,140,0.25)",
+            transition: "transform 0.22s, box-shadow 0.22s, background 0.2s",
+            transform: open ? "rotate(45deg)" : "rotate(0deg)",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 6px 28px rgba(130,175,140,0.35)"; }}
+          onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 4px 20px rgba(130,175,140,0.25)"; }}
+        >
+          <PlusIcon/>
+        </button>
+      </div>
+    </>
+  );
+};
+
 // ── Results Page ───────────────────────────────────────────────────────────────
 const ResultsPage = ({ query, results, isSearching, onBack, onSelectNote, onQueryChange, onSearch }: {
   query: string;
@@ -370,22 +817,32 @@ const ResultsPage = ({ query, results, isSearching, onBack, onSelectNote, onQuer
 export default function SearchableHome() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"home" | "results">("home");
   const [searchResults, setSearchResults] = useState<DisplayNote[]>([]);
   const [selected, setSelected] = useState<DisplayNote | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [showTranscribe, setShowTranscribe] = useState(false);
 
   const { data: rawNotes = [], isLoading } = useQuery({
     queryKey: ["notes"],
     queryFn: () => api.get<NoteResponse[]>("/api/notes/?limit=50"),
   });
 
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.get<Category[]>("/api/categories/"),
+  });
+
   const notes: DisplayNote[] = rawNotes.map((n, i) => toDisplay(n, i));
 
-  // Live filter on home page
+  // Live filter on home page (search + category)
   const liveFiltered = notes.filter(n => {
     const q = query.toLowerCase();
-    return !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.tags.some(t => t.includes(q));
+    const matchesSearch = !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.tags.some(t => t.includes(q));
+    const matchesCategory = activeCategory === null || rawNotes.find(rn => rn.id === n.id)?.category?.id === activeCategory;
+    return matchesSearch && matchesCategory;
   });
 
   const searchMutation = useMutation({
@@ -395,6 +852,44 @@ export default function SearchableHome() {
       const results = (data.notes ?? []).map((n, i) => toDisplay(n, i));
       setSearchResults(results);
       setView("results");
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const form = new FormData();
+      form.append("content", content);
+      form.append("content_type", "text");
+      return api.post<{ id: string }>("/api/notes/", form);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      navigate(`/note/${data.id}`);
+    },
+  });
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: (noteId: string) => api.delete(`/api/notes/${noteId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      setSelected(null);
+    },
+  });
+
+  const renameCategoryMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api.patch<Category>(`/api/categories/${id}`, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/categories/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      setActiveCategory(null);
     },
   });
 
@@ -417,13 +912,15 @@ export default function SearchableHome() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg); font-family: var(--font-body); min-height: 100vh; }
         input:focus { outline: none; }
-        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #e0d0c0; border-radius: 3px; }
 
         @keyframes wave { from { height: 5px; } to { height: 32px; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes popBubble { 0% { opacity: 0; transform: scale(0.8) translateY(20px); } 70% { transform: scale(1.03) translateY(-4px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes popUp { 0% { opacity: 0; transform: scale(0.6) translateY(8px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes floatIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes folderSlideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pageSlideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
@@ -478,7 +975,7 @@ export default function SearchableHome() {
           </div>
 
           {/* Search */}
-          <div style={{ width: "100%", maxWidth: "780px", marginBottom: "32px" }}>
+          <div style={{ width: "100%", maxWidth: "780px", marginBottom: "16px" }}>
             <div style={{ display: "flex", gap: "10px" }}>
               <div style={{
                 flex: 1, display: "flex", alignItems: "center", gap: "11px",
@@ -511,13 +1008,26 @@ export default function SearchableHome() {
             </p>
           </div>
 
+          {/* Category tabs */}
+          {categories.length > 0 && (
+            <CategoryTabs
+              categories={categories}
+              activeCategory={activeCategory}
+              onSelect={setActiveCategory}
+              onRename={(id, name) => renameCategoryMutation.mutate({ id, name })}
+              onDelete={id => deleteCategoryMutation.mutate(id)}
+            />
+          )}
+
           {/* Notes container */}
           <div style={{ width: "100%", maxWidth: "780px", background: "rgba(255,253,249,0.72)", backdropFilter: "blur(16px)", border: "2px solid rgba(200,185,168,0.28)", borderRadius: "32px", boxShadow: "0 8px 48px rgba(160,140,120,0.1), inset 0 2px 12px rgba(255,255,255,0.8), inset 0 -2px 8px rgba(200,180,160,0.07)", padding: "28px 24px 8px", position: "relative", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", paddingBottom: "14px", borderBottom: "1.5px dashed rgba(200,185,168,0.35)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: "linear-gradient(135deg,#88b894,#6a9878)", boxShadow: "0 0 6px rgba(106,152,120,0.4)" }}/>
                 <span style={{ fontFamily: "var(--font-display)", fontSize: "15px", color: "#8a7a6a", fontStyle: "italic", fontWeight: "400" }}>
-                  {query ? `thoughts matching "${query}"` : "all thoughts"}
+                  {activeCategory
+                    ? categories.find(c => c.id === activeCategory)?.name || "filtered"
+                    : query ? `thoughts matching "${query}"` : "all thoughts"}
                 </span>
               </div>
               <span style={{ fontSize: "12px", color: "#c0b0a0", fontFamily: "var(--font-body)" }}>{liveFiltered.length} {liveFiltered.length === 1 ? "note" : "notes"}</span>
@@ -537,7 +1047,7 @@ export default function SearchableHome() {
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "14px", paddingTop: "4px" }}>
-                  {liveFiltered.map((note, i) => <NoteCard key={note.id} note={note} index={i} onClick={() => navigate(`/note/${note.id}`)}/>)}
+                  {liveFiltered.map((note, i) => <NoteCard key={note.id} note={note} index={i} onClick={() => setSelected(note)}/>)}
                 </div>
               )}
             </div>
@@ -554,15 +1064,29 @@ export default function SearchableHome() {
         </div>
       )}
 
-      {/* FAB */}
-      <button onClick={() => navigate('/note/new')} style={{ position: "fixed", bottom: 32, right: 32, zIndex: 10, width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", border: "2px solid rgba(130,175,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#3d6b4a", boxShadow: "0 4px 20px rgba(130,175,140,0.25)", transition: "transform 0.18s, box-shadow 0.18s" }}
-        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(130,175,140,0.35)"; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(130,175,140,0.25)"; }}
-      >
-        <PlusIcon/>
-      </button>
+      {/* FAB Palette */}
+      <FABPalette
+        onNewText={() => navigate('/note/new')}
+        onNewVoice={() => setShowTranscribe(true)}
+      />
 
-      {selected && <NoteModal note={selected} onClose={() => setSelected(null)}/>}
+      {/* Modals */}
+      {selected && (
+        <NoteModal
+          note={selected}
+          onClose={() => setSelected(null)}
+          onDelete={() => deleteNoteMutation.mutate(selected.id)}
+        />
+      )}
+      {showTranscribe && (
+        <TranscribeModal
+          onClose={() => setShowTranscribe(false)}
+          onCreate={content => {
+            setShowTranscribe(false);
+            createMutation.mutate(content);
+          }}
+        />
+      )}
     </>
   );
 }
