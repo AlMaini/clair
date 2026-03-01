@@ -26,12 +26,12 @@ log = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
 You are a personal knowledge organizer. Given a new note and the user's existing \
-knowledge base, respond with a single JSON object — no explanation, no code fences.
+knowledge base, respond with a single JSON object.
 
 Required keys:
 {
   "title":               "short descriptive title, max 60 chars",
-  "summary":             "2-3 sentence summary of the note",
+  "summary":             "organized version of the note: keep all important facts, names, decisions, action items, and specific details; remove filler words, repetition, and off-topic tangents; use bullet points or short paragraphs as appropriate",
   "tags":                ["lowercase", "specific", "tags"],
   "category_name":       "exact name of best-fit existing category, or a new name",
   "category_description":"one sentence description if this is a NEW category, else ''",
@@ -113,7 +113,8 @@ async def organize_note(note_id: str) -> None:
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.2,
-        max_tokens=600,
+        max_tokens=2000,
+        response_format={"type": "json_object"},
     )
     result = parse_llm_json(response.choices[0].message.content)
 
