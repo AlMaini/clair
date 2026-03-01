@@ -17,6 +17,8 @@ export default function NoteInput({ onClose, onCreated }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const isUrl = /^https?:\/\/[^\s]+$/i.test(content.trim())
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!content.trim()) return
@@ -24,8 +26,15 @@ export default function NoteInput({ onClose, onCreated }: Props) {
     setError('')
     try {
       const form = new FormData()
-      form.append('content', content)
-      form.append('content_type', 'text')
+      if (isUrl) {
+        const url = content.trim()
+        form.append('content', url)
+        form.append('content_type', 'link')
+        form.append('source_url', url)
+      } else {
+        form.append('content', content)
+        form.append('content_type', 'text')
+      }
       await api.post('/api/notes/', form)
       onCreated()
     } catch (err: unknown) {
@@ -51,14 +60,20 @@ export default function NoteInput({ onClose, onCreated }: Props) {
             value={content}
             onChange={e => setContent(e.target.value)}
             autoFocus
-            placeholder="What's on your mind…"
+            placeholder="What's on your mind… or paste a link"
             rows={5}
-            style={{ width: "100%", padding: "14px 16px", background: "rgba(255,255,255,0.7)", border: "1.5px solid rgba(200,185,168,0.4)", borderRadius: "16px", fontSize: "14.5px", fontFamily: "'Nunito', sans-serif", color: "#3a3028", lineHeight: "1.65", resize: "vertical", outline: "none" }}
+            style={{ width: "100%", padding: "14px 16px", background: "rgba(255,255,255,0.7)", border: `1.5px solid ${isUrl ? 'rgba(90,140,210,0.45)' : 'rgba(200,185,168,0.4)'}`, borderRadius: "16px", fontSize: "14.5px", fontFamily: "'Nunito', sans-serif", color: "#3a3028", lineHeight: "1.65", resize: "vertical", outline: "none", transition: "border-color 0.2s" }}
           />
 
           {error && (
             <div style={{ marginTop: "10px", padding: "8px 12px", background: "rgba(220,100,100,0.08)", border: "1.5px solid rgba(220,100,100,0.2)", borderRadius: "10px", fontSize: "12.5px", color: "#b05050", fontFamily: "'Nunito', sans-serif" }}>
               {error}
+            </div>
+          )}
+
+          {isUrl && !error && (
+            <div style={{ marginTop: "10px", padding: "8px 12px", background: "rgba(90,140,210,0.08)", border: "1.5px solid rgba(90,140,210,0.2)", borderRadius: "10px", fontSize: "12.5px", color: "#4a6fa5", fontFamily: "'Nunito', sans-serif" }}>
+              🔗 Link detected — we'll summarise the page and find related resources
             </div>
           )}
 
@@ -68,7 +83,7 @@ export default function NoteInput({ onClose, onCreated }: Props) {
             </button>
             <button type="submit" disabled={loading || !content.trim()} style={{ padding: "10px 20px", borderRadius: "14px", border: "1.5px solid rgba(130,175,140,0.4)", background: "linear-gradient(145deg, #e8f2ea, #d2e8da)", fontSize: "13.5px", fontFamily: "'Nunito', sans-serif", fontWeight: "700", color: "#3d6b4a", cursor: loading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "7px", opacity: loading || !content.trim() ? 0.6 : 1, transition: "opacity 0.2s" }}>
               {loading && <div style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(61,107,74,0.3)", borderTopColor: "#3d6b4a", animation: "spin 0.8s linear infinite" }}/>}
-              Save thought
+              {isUrl ? 'Save link' : 'Save thought'}
             </button>
           </div>
         </form>

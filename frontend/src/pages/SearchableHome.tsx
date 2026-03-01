@@ -490,9 +490,9 @@ const NoteModal = ({
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(12px)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ position: "relative", width: "min(580px, 94vw)", animation: "popBubble 0.38s cubic-bezier(.22,.68,0,1.3)" }} onClick={e => e.stopPropagation()}>
-        <div style={{ background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "32px", padding: "36px 36px 30px", boxShadow: `0 8px 40px ${acc.glow}, 0 2px 16px rgba(160,140,120,0.1)`, position: "relative" }}>
+        <div className="note-modal-scroll" style={{ background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "32px", padding: "36px 36px 30px", boxShadow: `0 8px 40px ${acc.glow}, 0 2px 16px rgba(160,140,120,0.1)`, position: "relative", maxHeight: "80vh", overflowY: "auto" }}>
           {/* Top-right buttons */}
-          <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: "6px", alignItems: "center" }}>
+          <div style={{ position: "sticky", top: 0, float: "right", display: "flex", gap: "6px", alignItems: "center", zIndex: 2 }}>
             {onDelete && !deleteConfirm && (
               <button onClick={() => setDeleteConfirm(true)} style={{ background: "rgba(220,100,100,0.08)", border: "1.5px solid rgba(220,100,100,0.2)", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#b05050" }}>
                 <TrashIcon/>
@@ -515,7 +515,7 @@ const NoteModal = ({
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "18px" }}>
             {note.tags.map(t => <span key={t} style={{ background: acc.tagBg, color: acc.tagText, borderRadius: "20px", padding: "3px 12px", fontSize: "12px", fontFamily: "var(--font-body)", fontWeight: "700" }}>{t}</span>)}
           </div>
-          <p style={{ fontSize: "14.5px", color: "#6a5a50", lineHeight: "1.75", fontFamily: "var(--font-body)", marginBottom: "26px" }}>{note.summary}</p>
+          <div className="rendered-html" style={{ fontSize: "14.5px", color: "#6a5a50", lineHeight: "1.75", fontFamily: "var(--font-body)", marginBottom: "26px" }} dangerouslySetInnerHTML={{ __html: note.summary }}/>
           {note.research.length > 0 && (
             <div style={{ background: "rgba(255,255,255,0.7)", borderRadius: "20px", padding: "18px 20px", border: `1.5px dashed ${acc.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
@@ -611,7 +611,7 @@ const NoteCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () =>
       <div style={{ position: "absolute", top: 14, right: 14, width: 8, height: 8, borderRadius: "50%", background: acc.dot, opacity: 0.85 }}/>
       <div>
         <div style={{ fontFamily: "var(--font-display)", fontSize: "15px", color: "#3a3028", fontWeight: "600", lineHeight: "1.35", marginBottom: "7px", paddingRight: "16px" }}>{note.title}</div>
-        <p style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{note.summary}</p>
+        <div className="rendered-html" style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: note.summary }}/>
       </div>
       <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "5px" }}>
         <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
@@ -668,9 +668,7 @@ const FolderCard = ({ note, onClick, index }: { note: DisplayNote; onClick?: () 
         <div style={{ fontFamily: "var(--font-display)", fontSize: "16px", color: "#3a3028", fontWeight: "600", lineHeight: "1.3", marginBottom: "8px", paddingRight: "12px" }}>
           {note.title}
         </div>
-        <p style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", marginBottom: "12px" }}>
-          {note.summary}
-        </p>
+        <div className="rendered-html" style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", marginBottom: "12px" }} dangerouslySetInnerHTML={{ __html: note.summary }}/>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
           <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
             {note.tags.map(t => <span key={t} style={{ background: acc.tagBg, color: acc.tagText, borderRadius: "20px", padding: "2px 9px", fontSize: "10.5px", fontFamily: "var(--font-body)", fontWeight: "700" }}>{t}</span>)}
@@ -806,13 +804,106 @@ const CategoryTabs = ({
   );
 };
 
+// ── Link Input Modal ───────────────────────────────────────────────────────────
+const LinkInputModal = ({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) => {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const isValidUrl = /^https?:\/\/[^\s]+$/i.test(url.trim());
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed || !isValidUrl) return;
+    setLoading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.append("content", trimmed);
+      form.append("content_type", "link");
+      form.append("source_url", trimmed);
+      await api.post("/api/notes/", form);
+      onCreated();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save link");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(12px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "min(480px, 92vw)", background: "linear-gradient(150deg, #fffef9, #fdf5ec)", border: "2px solid rgba(90,140,210,0.3)", borderRadius: "28px", padding: "32px 30px 26px", boxShadow: "0 12px 48px rgba(90,140,210,0.12), 0 0 0 8px rgba(255,255,255,0.5)", animation: "popBubble 0.32s cubic-bezier(.22,.68,0,1.25)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+          <span style={{ color: "#5a8ad2" }}><LinkIcon/></span>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: "21px", color: "#2e2620", fontWeight: "600" }}>save a link</h2>
+        </div>
+        <p style={{ fontSize: "13px", color: "#b0a090", marginBottom: "22px", fontFamily: "var(--font-body)", fontWeight: "300" }}>
+          paste a URL — clair will summarise the page and find related resources
+        </p>
+        <form onSubmit={handleSubmit}>
+          <input
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            autoFocus
+            placeholder="https://…"
+            style={{
+              width: "100%", padding: "14px 16px",
+              background: "rgba(255,255,255,0.75)",
+              border: `1.5px solid ${url.trim() ? (isValidUrl ? "rgba(90,140,210,0.5)" : "rgba(220,100,100,0.4)") : "rgba(200,185,168,0.35)"}`,
+              borderRadius: "16px", fontSize: "14.5px",
+              fontFamily: "var(--font-body)", color: "#3a3028",
+              outline: "none", transition: "border-color 0.2s",
+            }}
+          />
+          {error && (
+            <div style={{ marginTop: "10px", padding: "8px 12px", background: "rgba(220,100,100,0.08)", border: "1.5px solid rgba(220,100,100,0.2)", borderRadius: "10px", fontSize: "12.5px", color: "#b05050", fontFamily: "var(--font-body)" }}>
+              {error}
+            </div>
+          )}
+          {url.trim() && !isValidUrl && (
+            <div style={{ marginTop: "10px", fontSize: "12px", color: "#b0a090", fontFamily: "var(--font-body)" }}>
+              enter a valid URL starting with http:// or https://
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "18px" }}>
+            <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: "14px", border: "1.5px solid rgba(200,185,168,0.4)", background: "transparent", fontSize: "13.5px", fontFamily: "var(--font-body)", fontWeight: "600", color: "#9a8880", cursor: "pointer" }}>
+              cancel
+            </button>
+            <button type="submit" disabled={loading || !isValidUrl} style={{
+              padding: "10px 22px", borderRadius: "14px",
+              border: "1.5px solid rgba(90,140,210,0.4)",
+              background: "linear-gradient(145deg, #e0ecf8, #ccdcf0)",
+              fontSize: "13.5px", fontFamily: "var(--font-body)", fontWeight: "700",
+              color: "#3d5a8a", cursor: loading ? "wait" : "pointer",
+              display: "flex", alignItems: "center", gap: "7px",
+              opacity: loading || !isValidUrl ? 0.55 : 1, transition: "opacity 0.2s",
+            }}>
+              {loading && <div style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(61,90,138,0.3)", borderTopColor: "#3d5a8a", animation: "spin 0.8s linear infinite" }}/>}
+              save link ✦
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // ── FAB Palette ────────────────────────────────────────────────────────────────
 const FABPalette = ({
   onNewText,
   onNewVoice,
+  onNewLink,
 }: {
   onNewText: () => void;
   onNewVoice: () => void;
+  onNewLink: () => void;
 }) => {
   const [open, setOpen] = useState(false);
   const [tooltip, setTooltip] = useState<string | null>(null);
@@ -906,7 +997,7 @@ const FABPalette = ({
         {open && (
           <>
             {placeholderBtn(<ImageIcon/>, "Image")}
-            {placeholderBtn(<LinkIcon/>, "Link")}
+            {miniBtn(<LinkIcon/>, "Paste a link", () => { setOpen(false); onNewLink(); }, "#5a8ad2")}
             {miniBtn(<MicIcon/>, "Voice note", () => { setOpen(false); onNewVoice(); }, "#5a6a9a")}
             {miniBtn(<PencilIcon/>, "Text note", () => { setOpen(false); onNewText(); })}
           </>
@@ -1035,6 +1126,7 @@ export default function SearchableHome() {
   const [selected, setSelected] = useState<DisplayNote | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [showTranscribe, setShowTranscribe] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
 
   const { data: rawNotes = [], isLoading } = useQuery({
     queryKey: ["notes"],
@@ -1298,6 +1390,7 @@ export default function SearchableHome() {
       <FABPalette
         onNewText={() => navigate('/note/new')}
         onNewVoice={() => setShowTranscribe(true)}
+        onNewLink={() => setShowLinkInput(true)}
       />
 
       {/* Modals */}
@@ -1315,6 +1408,15 @@ export default function SearchableHome() {
             setShowTranscribe(false);
             queryClient.invalidateQueries({ queryKey: ["notes"] });
             // Stay on home — polling will auto-refresh as Whisper + organizer finish
+          }}
+        />
+      )}
+      {showLinkInput && (
+        <LinkInputModal
+          onClose={() => setShowLinkInput(false)}
+          onCreated={() => {
+            setShowLinkInput(false);
+            queryClient.invalidateQueries({ queryKey: ["notes"] });
           }}
         />
       )}

@@ -138,13 +138,14 @@ const NoteModal = ({ note, onClose }) => {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(245,240,234,0.82)", backdropFilter: "blur(12px)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ position: "relative", width: "min(580px, 94vw)", animation: "popBubble 0.38s cubic-bezier(.22,.68,0,1.3)" }} onClick={e => e.stopPropagation()}>
-        <div style={{
+        <div className="note-modal-scroll" style={{
           background: acc.bg, border: `2px solid ${acc.border}`, borderRadius: "32px",
           padding: "36px 36px 30px",
           boxShadow: `0 8px 40px ${acc.glow}, 0 2px 16px rgba(160,140,120,0.1)`,
           position: "relative",
+          maxHeight: "80vh", overflowY: "auto",
         }}>
-          <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
+          <button onClick={onClose} style={{ position: "sticky", top: 0, float: "right", background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880", zIndex: 2 }}>
             <CloseIcon/>
           </button>
           <div style={{ fontSize: "11.5px", color: "#b0a090", fontFamily: "var(--font-body)", marginBottom: "7px", letterSpacing: "0.04em" }}>{note.date}</div>
@@ -154,7 +155,7 @@ const NoteModal = ({ note, onClose }) => {
               <span key={t} style={{ background: acc.tagBg, color: acc.tagText, borderRadius: "20px", padding: "3px 12px", fontSize: "12px", fontFamily: "var(--font-body)", fontWeight: "700" }}>{t}</span>
             ))}
           </div>
-          <p style={{ fontSize: "14.5px", color: "#6a5a50", lineHeight: "1.75", fontFamily: "var(--font-body)", marginBottom: "26px" }}>{note.summary}</p>
+          <div className="rendered-html" style={{ fontSize: "14.5px", color: "#6a5a50", lineHeight: "1.75", fontFamily: "var(--font-body)", marginBottom: "26px" }} dangerouslySetInnerHTML={{ __html: note.summary }}/>
           <div style={{ background: "rgba(255,255,255,0.7)", borderRadius: "20px", padding: "18px 20px", border: `1.5px dashed ${acc.border}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
               <span style={{ color: acc.tagText }}><SparkleIcon/></span>
@@ -373,9 +374,7 @@ const NoteCard = ({ note, onClick, index }) => {
         <div style={{ fontFamily: "var(--font-display)", fontSize: "15px", color: "#3a3028", fontWeight: "600", lineHeight: "1.35", marginBottom: "7px", paddingRight: "16px" }}>
           {note.title}
         </div>
-        <p style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {note.summary}
-        </p>
+        <div className="rendered-html" style={{ fontSize: "12px", color: "#8a7a70", lineHeight: "1.6", fontFamily: "var(--font-body)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: note.summary }}/>
       </div>
 
       <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "5px" }}>
