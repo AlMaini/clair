@@ -333,8 +333,8 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
         )}
         {/* Save button */}
         <button onClick={onSave} disabled={isSaving} style={{display:"flex",alignItems:"center",gap:"5px",background:isSaving?"rgba(130,175,140,0.4)":"linear-gradient(145deg, #82af8c, #6a9878)",border:`1.5px solid ${isSaving?"rgba(130,175,140,0.3)":"rgba(106,152,120,0.5)"}`,borderRadius:"10px",padding:"5px 12px",cursor:isSaving?"wait":"pointer",color:"#fff",fontSize:"12px",fontFamily:"var(--fb)",fontWeight:"700",transition:"all 0.15s",flexShrink:0,boxShadow:isSaving?"none":"0 2px 8px rgba(106,152,120,0.25)"}} onMouseEnter={(e: any)=>!isSaving&&(e.currentTarget.style.transform="translateY(-1px)",e.currentTarget.style.boxShadow="0 4px 12px rgba(106,152,120,0.35)")} onMouseLeave={(e: any)=>!isSaving&&(e.currentTarget.style.transform="translateY(0)",e.currentTarget.style.boxShadow="0 2px 8px rgba(106,152,120,0.25)")}>
-          {isSaving?<div style={{width:"12px",height:"12px",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>:<SpkI/>}
-          {isSaving?"analyzing...":"save & analyze"}
+          {isSaving?<div style={{width:"12px",height:"12px",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>:<ChkI/>}
+          {isSaving?"saving…":"save"}
         </button>
         {/* Save status */}
         <div style={{display:"flex",alignItems:"center",gap:"3px",fontSize:"11px",color:saved?"#82af8c":"#c0b0a0",fontFamily:"var(--fb)",transition:"color 0.35s",flexShrink:0}}>
@@ -558,8 +558,8 @@ export default function NotePage() {
       const firstLine = lines[0].trim();
       // Use stored title if available; otherwise derive from first line
       const title = fetchedNote.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
-      // Body is always raw_content (title is now an independent field)
-      const body = fetchedNote.raw_content;
+      // Show processed content in the editor if available, otherwise raw
+      const body = fetchedNote.processed_content || fetchedNote.raw_content;
 
       setLocalNote({
         id: fetchedNote.id,
@@ -591,8 +591,8 @@ export default function NotePage() {
 
   // Mutation for updating an existing note
   const updateMutation = useMutation({
-    mutationFn: async ({ noteId, content, title, tags, color }: { noteId: string; content: string; title?: string; tags: string[]; color?: string }) => {
-      return api.patch<NoteResponse>(`/api/notes/${noteId}`, { content, title, tags, color });
+    mutationFn: async ({ noteId, processed_content, title, tags, color }: { noteId: string; processed_content: string; title?: string; tags: string[]; color?: string }) => {
+      return api.patch<NoteResponse>(`/api/notes/${noteId}`, { processed_content, title, tags, color });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notes"] });
@@ -634,7 +634,7 @@ export default function NotePage() {
     if (!isNewNote && updated.id && updated.id !== "new") {
       updateMutation.mutate({
         noteId: updated.id,
-        content: updated.body,
+        processed_content: updated.body,
         title: updated.title,
         tags: updated.tags,
         color: updated.accent,
@@ -651,21 +651,13 @@ export default function NotePage() {
         createMutation.mutate(localNote.body);
       }
     } else if (localNote.id && localNote.id !== "new") {
-      // Update existing note with separate title, body, color, then trigger AI reprocessing
-      updateMutation.mutate(
-        {
-          noteId: localNote.id,
-          content: localNote.body,
-          title: localNote.title,
-          tags: localNote.tags,
-          color: localNote.accent,
-        },
-        {
-          onSuccess: () => {
-            reprocessMutation.mutate(localNote.id);
-          },
-        }
-      );
+      updateMutation.mutate({
+        noteId: localNote.id,
+        processed_content: localNote.body,
+        title: localNote.title,
+        tags: localNote.tags,
+        color: localNote.accent,
+      });
     }
   }, [localNote, isNewNote, createMutation, updateMutation, reprocessMutation]);
 
@@ -740,10 +732,8 @@ export default function NotePage() {
     };
   });
 
-  // If we have a localNote, ensure it's in the list (for new notes)
-  const allDisplayNotes = localNote.id === "new" 
-    ? [localNote, ...displayNotes]
-    : displayNotes;
+  // Always put localNote first so NoteEditor picks it up with the correct body
+  const allDisplayNotes = [localNote, ...displayNotes.filter(n => n.id !== localNote.id)];
 
   return (
     <>
@@ -791,7 +781,7 @@ export default function NotePage() {
         onNewNote={handleNewNote}
         onBack={handleBack}
         onSave={handleSave}
-        isSaving={createMutation.isPending || updateMutation.isPending || reprocessMutation.isPending}
+        isSaving={createMutation.isPending || updateMutation.isPending}
       />
 
       {recording && <RecordingModal onClose={() => setRecording(false)} onSave={handleSaveRecording} />}
