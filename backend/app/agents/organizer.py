@@ -126,17 +126,20 @@ async def organize_note(note_id: str) -> None:
     related_note_ids = [r for r in raw_related if r in existing_ids][:3]
 
     # ── 8. Write back to the note ────────────────────────────────────────────
+    update_fields: dict = {
+        "processed_content": result.get("summary"),
+        "tags": result.get("tags") or [],
+        "category_id": category_id,
+        "related_note_ids": related_note_ids,
+    }
+    # Only set title if the note doesn't already have one (e.g. link notes
+    # get their title from the link-scraping step and it should be kept).
+    if not (note.get("title") or "").strip():
+        update_fields["title"] = result.get("title")
+
     await asyncio.to_thread(
         lambda: supabase.table("notes")
-        .update(
-            {
-                "processed_content": result.get("summary"),
-                "title": result.get("title"),
-                "tags": result.get("tags") or [],
-                "category_id": category_id,
-                "related_note_ids": related_note_ids,
-            }
-        )
+        .update(update_fields)
         .eq("id", note_id)
         .execute()
     )

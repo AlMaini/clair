@@ -124,7 +124,7 @@ Most people notice a difference within two weeks. The changes are subtle at firs
           {transcript&&<p style={{marginTop:"8px",fontSize:"12px",color:"#9a8878",fontStyle:"italic",lineHeight:"1.55",fontFamily:"var(--fb)",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>"{transcript.slice(0,200)}…"</p>}
         </div>
         {phase==="processing"&&<div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"14px",color:"#7aab86"}}><div style={{width:"14px",height:"14px",border:"2px solid #7aab86",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.85s linear infinite"}}/><span style={{fontSize:"12.5px",fontFamily:"var(--fb)"}}>organising…</span></div>}
-        {phase==="done"&&result&&<div style={{marginBottom:"16px"}}><div style={{fontFamily:"var(--fd)",fontSize:"17px",color:"#2e2620",fontWeight:"600",marginBottom:"3px"}}>{result.title}</div><p style={{fontSize:"12px",color:"#6a5a50",lineHeight:"1.55",fontFamily:"var(--fb)"}}>{result.summary}</p><div style={{display:"flex",gap:"5px",marginTop:"6px"}}>{result.tags.map((t: string)=><span key={t} style={{background:"rgba(122,171,134,0.14)",color:"#3d7a50",borderRadius:"20px",padding:"2px 9px",fontSize:"10.5px",fontFamily:"var(--fb)",fontWeight:"700"}}>{t}</span>)}</div></div>}
+        {phase==="done"&&result&&<div style={{marginBottom:"16px"}}><div style={{fontFamily:"var(--fd)",fontSize:"17px",color:"#2e2620",fontWeight:"600",marginBottom:"3px"}}>{result.title}</div><div className="rendered-html" style={{fontSize:"12px",color:"#6a5a50",lineHeight:"1.55",fontFamily:"var(--fb)"}} dangerouslySetInnerHTML={{__html:result.summary}}/><div style={{display:"flex",gap:"5px",marginTop:"6px"}}>{result.tags.map((t: string)=><span key={t} style={{background:"rgba(122,171,134,0.14)",color:"#3d7a50",borderRadius:"20px",padding:"2px 9px",fontSize:"10.5px",fontFamily:"var(--fb)",fontWeight:"700"}}>{t}</span>)}</div></div>}
         <div style={{display:"flex",gap:"8px"}}>
           {phase==="idle"&&<button onClick={startRec} style={{flex:1,background:"linear-gradient(135deg,#82af8c,#6a9878)",color:"#fff",border:"none",borderRadius:"14px",padding:"13px",fontWeight:"700",fontSize:"13.5px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:"6px",fontFamily:"var(--fb)"}}><MicI/>start speaking</button>}
           {phase==="recording"&&<button onClick={stopRec} style={{flex:1,background:"linear-gradient(135deg,#e8a0b0,#d4788a)",color:"#fff",border:"none",borderRadius:"14px",padding:"13px",fontWeight:"700",fontSize:"13.5px",cursor:"pointer",fontFamily:"var(--fb)"}}>◼ stop</button>}
@@ -645,8 +645,11 @@ export default function NotePage() {
   const createMutation = useMutation({
     mutationFn: async (content: string) => {
       const form = new FormData();
-      form.append("content", content);
-      form.append("content_type", "text");
+      const trimmed = content.trim();
+      const isLink = /^https?:\/\/[^\s]+$/i.test(trimmed);
+      form.append("content", trimmed);
+      form.append("content_type", isLink ? "link" : "text");
+      if (isLink) form.append("source_url", trimmed);
       return api.post<{ id: string }>("/api/notes/", form);
     },
     onSuccess: (data) => {
