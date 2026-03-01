@@ -1,6 +1,6 @@
 # Clair
 
-An AI-powered note organizer. You talk, we organize. Your ideas stay yours — just cleaner.
+An AI-powered search engine for your ideas.
 
 ## Quick Start
 

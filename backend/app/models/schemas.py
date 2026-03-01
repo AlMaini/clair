@@ -10,6 +10,12 @@ class NoteCreate(BaseModel):
     source_url: str | None = None
 
 
+class NoteUpdate(BaseModel):
+    content: str | None = None
+    tags: list[str] | None = None
+    source_url: str | None = None
+
+
 class NoteResponse(BaseModel):
     id: str
     raw_content: str
@@ -18,6 +24,8 @@ class NoteResponse(BaseModel):
     category: dict | None
     tags: list[str]
     resources: list[dict]
+    file_path: str | None
+    related_note_ids: list[str]
     created_at: datetime
 
 
@@ -28,6 +36,16 @@ class SearchQuery(BaseModel):
 
 class SearchResult(BaseModel):
     notes: list[NoteResponse]
+
+
+class CategoryCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
 
 
 class CategoryResponse(BaseModel):

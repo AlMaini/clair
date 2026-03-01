@@ -6,8 +6,11 @@ class Settings(BaseSettings):
 
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
-    ANTHROPIC_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
+    FEATHERLESS_API_KEY: str = ""
+    FEATHERLESS_BASE_URL: str = "https://api.featherless.ai/v1"
+    FEATHERLESS_MODEL: str = "meta-llama/Llama-3.3-70B-Instruct"
+    OPENAI_API_KEY: str = ""  # Whisper transcription + text-embedding-3-small
+    YOUTUBE_API_KEY: str = ""  # YouTube Data API v3; researcher skips YouTube if unset
     REDIS_URL: str = "redis://localhost:6379/0"
 
 
