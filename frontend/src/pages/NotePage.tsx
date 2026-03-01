@@ -149,7 +149,13 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
   const [newTag,   setNewTag]   = useState("");
   const [saved,    setSaved]    = useState(true);
   const [nlSearch, setNlSearch] = useState("");
-  const [showRes,  setShowRes]  = useState(true);
+  const [showRes,  setShowRes]  = useState(() => {
+    // Close research panel by default on mobile
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > 768;
+    }
+    return true;
+  });
   const [delConf,  setDelConf]  = useState(false);
   const [resInput, setResInput] = useState("");
   const [accentPicker, setAccentPicker] = useState(false);
@@ -170,6 +176,10 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
     setTags(note.tags||[]);
     setSaved(true);
     setDelConf(false);
+    // Close research panel on mobile when switching notes
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setShowRes(false);
+    }
     // Push body into contentEditable
     if(editorRef.current) editorRef.current.innerHTML = note.body||"";
   },[note?.id]);
@@ -486,7 +496,7 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
                   e.target.style.height = 'auto';
                   e.target.style.height = e.target.scrollHeight + 'px';
                 }}
-                style={{width:"100%",background:"none",border:"none",outline:"none",fontFamily:"var(--fd)",fontSize:"clamp(20px,3.2vw,34px)",fontWeight:"700",color:"#1e1a16",lineHeight:"1.15",marginBottom:"2px",resize:"none",overflow:"hidden"}}/>
+                style={{width:"100%",background:"none",border:"none",outline:"none",fontFamily:"var(--fd)",fontSize:"clamp(20px,3.2vw,34px)",fontWeight:"700",color:"#1e1a16",lineHeight:"1.15",marginBottom:"2px",resize:"none",overflow:"hidden",display:"block"}}/>
               {/* Accent underline */}
               <div style={{width:"48px",height:"3px",background:`linear-gradient(90deg,${acc.dot},transparent)`,borderRadius:"2px",marginBottom:"4px"}}/>
             </div>
@@ -528,7 +538,7 @@ const NoteEditor = ({notes, activeId, onSelectNote, onUpdateNote, onDeleteNote, 
 
         {/* ─── RIGHT: Research Panel ─── */}
         {showRes&&(
-          <div className={`research-panel ${showRes ? 'mobile-open' : ''}`} style={{width:"256px",flexShrink:0,borderLeft:`1.5px solid ${acc.border}`,background:acc.bar,backdropFilter:"blur(12px)",display:"flex",flexDirection:"column",overflow:"hidden",animation:"sideIn 0.22s ease"}}>
+          <div className={`research-panel ${showRes ? 'mobile-open' : ''}`} style={{width:"256px",flexShrink:0,borderLeft:`1.5px solid ${acc.border}`,background:acc.bar,backdropFilter:"blur(12px)",display:"flex",flexDirection:"column",overflow:"hidden",animation:"slideInRight 0.3s ease"}}>
             {/* Mobile close button */}
             <div style={{display:"none",padding:"12px",borderBottom:`1px solid ${acc.border}`}} className="mobile-research-close">
               <style>{`.mobile-research-close{display:none!important}@media (max-width:768px){.mobile-research-close{display:block!important}}`}</style>
