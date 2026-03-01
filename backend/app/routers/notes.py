@@ -162,6 +162,8 @@ async def update_note(
     patch: dict = {}
     if body.content is not None:
         patch["raw_content"] = body.content
+    if body.processed_content is not None:
+        patch["processed_content"] = body.processed_content
     if body.title is not None:
         patch["title"] = body.title
     if body.tags is not None:

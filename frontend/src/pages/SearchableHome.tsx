@@ -50,7 +50,7 @@ function toDisplay(note: NoteResponse, index: number): DisplayNote {
     : note.title || (firstLine.length > 70 ? firstLine.slice(0, 70) + "…" : firstLine || "Untitled");
   const summary = isProcessing
     ? "your voice note is being processed by whisper"
-    : lines.slice(1).join("\n").trim() || note.raw_content;
+    : note.processed_content || note.raw_content;
   const date = new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const accent = (note.color as AccentKey) || accentFromCategory(note.category?.name, index);
   return {
@@ -480,10 +480,12 @@ const NoteModal = ({
   note,
   onClose,
   onDelete,
+  onEdit,
 }: {
   note: DisplayNote;
   onClose: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
 }) => {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const acc = ACCENTS[note.accent];
@@ -504,6 +506,11 @@ const NoteModal = ({
                 <button onClick={() => { onDelete?.(); }} style={{ padding: "4px 8px", background: "#dc6464", border: "none", borderRadius: "8px", fontSize: "11px", color: "#fff", cursor: "pointer", fontFamily: "var(--font-body)", fontWeight: "700" }}>yes</button>
                 <button onClick={() => setDeleteConfirm(false)} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "8px", fontSize: "11px", color: "#7a6858", cursor: "pointer", fontFamily: "var(--font-body)" }}>no</button>
               </div>
+            )}
+            {onEdit && (
+              <button onClick={onEdit} style={{ background: acc.tagBg, border: `1.5px solid ${acc.border}`, borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: acc.tagText }} title="Edit note">
+                <PencilIcon/>
+              </button>
             )}
             <button onClick={onClose} style={{ background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#9a8880" }}>
               <CloseIcon/>
@@ -1039,11 +1046,12 @@ export default function SearchableHome() {
   const { data: rawNotes = [], isLoading } = useQuery({
     queryKey: ["notes"],
     queryFn: () => api.get<NoteResponse[]>("/api/notes/?limit=50"),
-    // Poll every 4 s while any voice note is still being transcribed/organised
+    // Poll every 4 s while any recently-created note is still being processed
     refetchInterval: (query) => {
       const data = query.state.data as NoteResponse[] | undefined;
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
       const hasProcessing = (data ?? []).some(
-        n => n.content_type === "voice" && !n.processed_content && !n.raw_content.trim()
+        n => !n.processed_content && new Date(n.created_at).getTime() > fiveMinutesAgo
       );
       return hasProcessing ? 4000 : false;
     },
@@ -1053,12 +1061,12 @@ export default function SearchableHome() {
     queryKey: ["categories"],
     queryFn: () => api.get<Category[]>("/api/categories/"),
     // Also poll categories — organizer may create a new one while processing
-    refetchInterval: (query) => {
-      const notes = rawNotes;
-      const hasProcessing = notes.some(
-        n => n.content_type === "voice" && !n.processed_content && !n.raw_content.trim()
+    refetchInterval: () => {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      const hasProcessing = rawNotes.some(
+        n => !n.processed_content && new Date(n.created_at).getTime() > fiveMinutesAgo
       );
-      return hasProcessing ? 5000 : false;
+      return hasProcessing ? 4000 : false;
     },
   });
 
@@ -1225,12 +1233,12 @@ export default function SearchableHome() {
             </p>
           </div>
 
-          {/* Processing banner — shown while voice notes are transcribing */}
-          {rawNotes.some(n => n.content_type === "voice" && !n.processed_content && !n.raw_content.trim()) && (
+          {/* Processing banner — shown while any recent note is still being processed */}
+          {rawNotes.some(n => !n.processed_content && new Date(n.created_at).getTime() > Date.now() - 5 * 60 * 1000) && (
             <div style={{ width: "100%", maxWidth: "780px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px", background: "rgba(22,18,14,0.88)", backdropFilter: "blur(12px)", border: "1.5px solid rgba(232,160,160,0.18)", borderRadius: "16px", padding: "10px 16px", animation: "fadeIn 0.3s ease" }}>
               <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#e87070", flexShrink: 0, animation: "recBlink 1.2s ease-in-out infinite", boxShadow: "0 0 6px rgba(232,112,112,0.5)" }}/>
               <span style={{ fontFamily: "var(--font-body)", fontSize: "12.5px", color: "rgba(255,220,200,0.7)", fontWeight: "400" }}>
-                whisper is transcribing your voice note — the page will update automatically
+                clair is organising your note — the page will update automatically
               </span>
               <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
                 {[0,1,2].map(i => <div key={i} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "rgba(232,160,160,0.5)", animation: "bounce 1.2s ease-in-out infinite", animationDelay: `${i * 0.2}s` }}/>)}
@@ -1306,6 +1314,7 @@ export default function SearchableHome() {
           note={selected}
           onClose={() => setSelected(null)}
           onDelete={() => deleteNoteMutation.mutate(selected.id)}
+          onEdit={() => { setSelected(null); navigate(`/note/${selected.id}`); }}
         />
       )}
       {showTranscribe && (

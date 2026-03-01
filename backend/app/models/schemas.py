@@ -12,6 +12,7 @@ class NoteCreate(BaseModel):
 
 class NoteUpdate(BaseModel):
     content: str | None = None
+    processed_content: str | None = None
     title: str | None = None
     tags: list[str] | None = None
     color: str | None = None
