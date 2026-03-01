@@ -38,6 +38,8 @@ def _row_to_note(row: dict) -> NoteResponse:
         file_path=row.get("file_path"),
         related_note_ids=[str(r) for r in (row.get("related_note_ids") or [])],
         created_at=row["created_at"],
+        title=row.get("title"),
+        color=row.get("color"),
     )
 
 
@@ -160,8 +162,12 @@ async def update_note(
     patch: dict = {}
     if body.content is not None:
         patch["raw_content"] = body.content
+    if body.title is not None:
+        patch["title"] = body.title
     if body.tags is not None:
         patch["tags"] = body.tags
+    if body.color is not None:
+        patch["color"] = body.color
     if body.source_url is not None:
         patch["source_url"] = body.source_url
 

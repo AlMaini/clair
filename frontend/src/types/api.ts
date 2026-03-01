@@ -22,6 +22,8 @@ export interface NoteResponse {
   file_path: string | null
   related_note_ids: string[]
   created_at: string
+  title: string | null
+  color: string | null
 }
 
 export interface SearchResult {
